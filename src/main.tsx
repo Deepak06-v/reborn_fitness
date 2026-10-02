@@ -1,15 +1,16 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { ScrollProvider } from './providers/ScrollProvider'
+import { CartProvider } from './context/CartContext'
+import './styles/globals.css'
 
-const container = document.getElementById('root')
-
-if (!container) {
-  throw new Error('Root element #root not found')
-}
-
-createRoot(container).render(
+createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ScrollProvider>
+      <CartProvider>
+        <App />
+      </CartProvider>
+    </ScrollProvider>
   </StrictMode>,
 )
