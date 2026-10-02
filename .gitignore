@@ -47,3 +47,7 @@ worktrees/
 
 # Test coverage
 coverage
+
+# TypeScript build info
+*.tsbuildinfo
+
