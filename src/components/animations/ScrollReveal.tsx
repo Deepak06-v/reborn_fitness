@@ -48,7 +48,7 @@ export function ScrollReveal({
         ...fromVars[direction],
         duration,
         delay,
-        ease: 'power3.out',
+        ease: 'power4.out',
         scrollTrigger: {
           trigger: el,
           start: 'top 88%',

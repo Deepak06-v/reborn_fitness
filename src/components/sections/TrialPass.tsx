@@ -1,7 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import QRCode from 'react-qr-code'
+import { useRef, useState, type FormEvent } from 'react'
+import html2canvas from 'html2canvas'
 import {
-  CalendarPlus,
   Check,
   ChevronRight,
   Crosshair,
@@ -66,51 +65,6 @@ function issuePass(selection: BookingSelection): IssuedPass {
   }
 }
 
-function passPayload(pass: IssuedPass) {
-  return [
-    'REBORN FITNESS — 1-DAY VIP TRIAL PASS',
-    `Ref: ${pass.bookingRef}`,
-    `Entry code: ${pass.entryCode}`,
-    `Guest: ${pass.guestName}`,
-    `Focus: ${pass.goalLabel}`,
-    `Slot: ${pass.dayLabel} · ${pass.slotLabel}`,
-    pass.coachName ? `Guide: ${pass.coachName}` : 'Guide: floor support',
-    `Issued: ${pass.issuedAt.toISOString()}`,
-  ].join('\n')
-}
-
-function addToCalendar(pass: IssuedPass) {
-  const start = new Date(pass.issuedAt.getTime() + 30 * 60_000)
-  const end = new Date(start.getTime() + 6 * 60 * 60_000)
-  const stamp = (date: Date) =>
-    date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
-  const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//REBORN FITNESS//Trial Pass//EN',
-    'BEGIN:VEVENT',
-    `UID:${pass.bookingRef}@rebornfitness.io`,
-    `DTSTAMP:${stamp(pass.issuedAt)}`,
-    `DTSTART:${stamp(start)}`,
-    `DTEND:${stamp(end)}`,
-    `SUMMARY:REBORN FITNESS — 1-Day VIP Trial (${pass.bookingRef})`,
-    `LOCATION:${brand.address}`,
-    `DESCRIPTION:Entry code ${pass.entryCode}. Focus: ${pass.goalLabel}. ${pass.coachName ? `Guide: ${pass.coachName}.` : ''}`,
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].join('\r\n')
-
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `reborn-trial-${pass.bookingRef}.ics`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
 const initialSelection: BookingSelection = {
   goalId: 'strength',
   dayId: 'today',
@@ -131,6 +85,28 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
     useState<BookingSelection>(initialSelection)
   const [errors, setErrors] = useState<Partial<Record<keyof BookingSelection, string>>>({})
   const [pass, setPass] = useState<IssuedPass | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const ticketRef = useRef<HTMLDivElement>(null)
+
+  /** Capture just the ticket element as a PNG and trigger download */
+  const downloadTicket = async () => {
+    const el = ticketRef.current
+    if (!el) return
+    try {
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#121212',
+        scale: 2, // 2x for crisp output
+        useCORS: true,
+      })
+      const link = document.createElement('a')
+      link.download = `reborn-pass-${pass?.bookingRef ?? 'ticket'}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch {
+      // Fallback: print just in case html2canvas fails
+      window.print()
+    }
+  }
 
   const update = <K extends keyof BookingSelection>(
     key: K,
@@ -161,7 +137,19 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
-    setPass(issuePass(selection))
+    setSubmitting(true)
+
+    // TODO: Simulate API Call to Gym Owner
+    // In production, integrate Webhook (Zapier/Make) or EmailJS here:
+    // fetch('https://hooks.zapier.com/hooks/catch/12345/abcde/', {
+    //   method: 'POST',
+    //   body: JSON.stringify(selection)
+    // })
+
+    window.setTimeout(() => {
+      setSubmitting(false)
+      setPass(issuePass(selection))
+    }, 2000)
   }
 
   const reset = () => {
@@ -323,9 +311,15 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
               </fieldset>
 
               <ScrollReveal direction="rise">
-                <Button type="submit" size="lg" fullWidth>
-                  Generate Digital Day Pass
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                <Button type="submit" size="lg" fullWidth disabled={submitting}>
+                  {submitting ? (
+                    'Owner Notified. Verifying Details...'
+                  ) : (
+                    <>
+                      Generate Digital Day Pass
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </>
+                  )}
                 </Button>
               </ScrollReveal>
             </form>
@@ -395,42 +389,45 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
         title="Your day pass is live"
       >
         {pass ? (
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col items-center gap-4 rounded border border-hairline bg-white p-5">
-              <QRCode
-                value={passPayload(pass)}
-                size={168}
-                bgColor="#ffffff"
-                fgColor="#09090b"
-                level="M"
-                aria-label={`QR pass for booking ${pass.bookingRef}`}
-              />
-              <p className="font-mono text-sm uppercase tracking-[0.2em] text-canvas">
-                {pass.entryCode}
-              </p>
+          <div className="flex flex-col gap-6">
+            {/* Digital Industrial Boarding Pass */}
+            <div ref={ticketRef} className="relative overflow-hidden rounded-md border-2 border-dashed border-hairline bg-surface p-6 shadow-[4px_4px_0px_0px_#FFEE00]">
+              
+              <div className="flex items-start justify-between border-b border-hairline pb-4">
+                <div>
+                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent">Verification No.</p>
+                  <p className="mt-1 font-display text-xl font-bold tracking-widest text-white">
+                    PASS-RBN-{pass.entryCode}X
+                  </p>
+                </div>
+                <span className="flex items-center gap-1.5 rounded-sm border border-accent bg-accent text-canvas px-3 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] font-bold shadow-[2px_2px_0px_0px_#262626]">
+                  VALID: 24 HOURS
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-y-5 gap-x-4 pt-5">
+                <div>
+                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Guest</p>
+                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.guestName}</p>
+                </div>
+                <div>
+                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Focus</p>
+                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.goalLabel}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Window</p>
+                  <p className="mt-1 font-display text-sm font-semibold uppercase text-accent">{pass.dayLabel} · {pass.slotLabel}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Assigned Guide</p>
+                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.coachName ?? 'Floor Support'}</p>
+                </div>
+              </div>
             </div>
 
-            <dl className="grid grid-cols-2 gap-3">
-              <PassField label="Booking ref" value={pass.bookingRef} />
-              <PassField label="Entry code" value={pass.entryCode} />
-              <PassField label="Window" value={`${pass.dayLabel} · ${pass.slotLabel}`} />
-              <PassField label="Focus" value={pass.goalLabel} />
-              <PassField
-                label="Guide"
-                value={pass.coachName ?? 'Floor support'}
-                wide
-              />
-              <PassField
-                label="Issued"
-                value={pass.issuedAt.toLocaleString()}
-                wide
-              />
-            </dl>
-
             <div className="flex flex-col gap-2">
-              <Button size="lg" fullWidth onClick={() => addToCalendar(pass)}>
-                <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-                Add to Calendar
+              <Button size="lg" fullWidth onClick={downloadTicket}>
+                Download Ticket
               </Button>
               <Button variant="ghost" fullWidth onClick={reset}>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
@@ -574,25 +571,6 @@ function Field({
           {error}
         </p>
       ) : null}
-    </div>
-  )
-}
-
-function PassField({
-  label,
-  value,
-  wide,
-}: {
-  label: string
-  value: string
-  wide?: boolean
-}) {
-  return (
-    <div className={cn('rounded border border-hairline p-3', wide && 'col-span-2')}>
-      <dt className="label-telemetry">{label}</dt>
-      <dd className="mt-1 truncate font-mono text-xs uppercase tracking-[0.1em] text-white">
-        {value}
-      </dd>
     </div>
   )
 }

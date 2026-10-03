@@ -58,6 +58,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        data-print-ticket
         className={cn(
           'relative my-auto w-full max-w-md rounded-lg border border-accent/30 bg-surface/95 p-6 shadow-lift backdrop-blur-[16px]',
           className,
@@ -68,7 +69,7 @@ export function Modal({
           type="button"
           onClick={onClose}
           aria-label="Close dialog"
-          className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white"
+          className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white print:hidden"
         >
           <X className="h-5 w-5" aria-hidden="true" />
         </button>

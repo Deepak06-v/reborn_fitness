@@ -10,6 +10,7 @@ import { Faq } from './components/sections/Faq'
 import { Hero } from './components/sections/Hero'
 import { Membership } from './components/sections/Membership'
 import { Merch } from './components/sections/Merch'
+import { PreLoader } from './components/sections/PreLoader'
 import { TrialPass } from './components/sections/TrialPass'
 import { Zones } from './components/sections/Zones'
 import { useScrollTo } from './hooks/useScrollTo'
@@ -17,6 +18,7 @@ import { useScrollTo } from './hooks/useScrollTo'
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [requestedCoachId, setRequestedCoachId] = useState<string | null>(null)
+  const [preloaderDone, setPreloaderDone] = useState(false)
   const scrollTo = useScrollTo()
 
   const bookWithCoach = (coachId: string) => {
@@ -26,6 +28,11 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen bg-canvas">
+      {/* Section 0: Pre-loader splash sequence */}
+      {!preloaderDone && (
+        <PreLoader onComplete={() => setPreloaderDone(true)} />
+      )}
+
       <a
         href="#trial-pass"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-full focus:bg-accent focus:px-5 focus:py-3 focus:font-display focus:text-xs focus:uppercase focus:tracking-[0.14em] focus:text-canvas"
@@ -36,7 +43,7 @@ export default function App() {
       <Header onOpenMenu={() => setMenuOpen(true)} />
 
       <main>
-        <Hero />
+        <Hero preloaderDone={preloaderDone} />
         <TrialPass requestedCoachId={requestedCoachId} />
         <Zones />
         <Membership />

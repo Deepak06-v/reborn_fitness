@@ -20,12 +20,12 @@ type LinkButtonProps = BaseProps &
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    'bg-accent text-canvas shadow-glow hover:bg-accent/90 hover:shadow-glow active:translate-y-px',
+    'border border-accent bg-surface text-white shadow-[4px_4px_0px_0px_#FFEE00] hover:bg-accent hover:text-canvas active:translate-x-[4px] active:translate-y-[4px] active:shadow-none',
   secondary:
-    'border border-accent/40 bg-card/60 text-white backdrop-blur-[16px] hover:border-accent/70 hover:bg-card/80',
+    'border border-hairline bg-surface text-white hover:border-accent',
   ghost:
-    'border border-hairline bg-transparent text-muted hover:border-accent/40 hover:text-white',
-  lime: 'bg-lime text-canvas shadow-glow-lime hover:bg-lime/90',
+    'border border-hairline bg-transparent text-muted hover:border-accent hover:text-white',
+  lime: 'border border-accent bg-surface text-white shadow-[4px_4px_0px_0px_#FFEE00] hover:bg-accent hover:text-canvas active:translate-x-[4px] active:translate-y-[4px] active:shadow-none',
 }
 
 const sizeClasses: Record<Size, string> = {
@@ -41,7 +41,7 @@ function classes(
   className: string | undefined,
 ) {
   return cn(
-    'inline-flex select-none items-center justify-center gap-2 rounded-full font-display font-semibold uppercase tracking-[0.14em] transition-all duration-200 ease-out-expo disabled:pointer-events-none disabled:opacity-50',
+    'inline-flex select-none items-center justify-center gap-2 rounded-md font-display font-semibold uppercase tracking-[0.14em] transition-all duration-200 ease-out-expo disabled:pointer-events-none disabled:opacity-50',
     variantClasses[variant],
     sizeClasses[size],
     fullWidth && 'w-full',

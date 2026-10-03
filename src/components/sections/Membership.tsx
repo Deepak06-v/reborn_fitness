@@ -37,7 +37,7 @@ export function Membership() {
           <div
             role="group"
             aria-label="Billing cycle"
-            className="inline-flex items-center gap-1 rounded-full border border-hairline bg-card/80 p-1.5 backdrop-blur-[16px]"
+            className="inline-flex items-center gap-1 rounded-md border border-hairline bg-surface p-1.5"
           >
             {(['monthly', 'annual'] as Cycle[]).map((option) => (
               <button
@@ -46,9 +46,9 @@ export function Membership() {
                 onClick={() => setCycle(option)}
                 aria-pressed={cycle === option}
                 className={cn(
-                  'flex min-h-[48px] items-center gap-2 rounded-full px-5 font-display text-xs font-semibold uppercase tracking-[0.14em] transition-colors',
+                  'flex min-h-[48px] items-center gap-2 rounded-md px-5 font-display text-xs font-semibold uppercase tracking-[0.14em] transition-colors',
                   cycle === option
-                    ? 'bg-accent text-canvas'
+                    ? 'bg-accent text-canvas font-bold'
                     : 'text-muted hover:text-white',
                 )}
               >
@@ -57,7 +57,7 @@ export function Membership() {
                   <span
                     className={cn(
                       'font-mono text-[0.625rem] tracking-[0.1em]',
-                      cycle === option ? 'text-canvas/70' : 'text-lime',
+                      cycle === option ? 'text-canvas/80' : 'text-accent',
                     )}
                   >
                     Save 20%
@@ -68,7 +68,7 @@ export function Membership() {
           </div>
         </div>
 
-        <ul className="mt-10 grid gap-5 md:grid-cols-3">
+        <ul className="mt-10 grid gap-6 md:grid-cols-3">
           {plans.map((plan, index) => {
             const price = formatPrice(plan.monthlyPrice, cycle)
             const isDayPass = plan.id === 'day'
@@ -79,9 +79,9 @@ export function Membership() {
                 <Card
                   interactive
                   className={cn(
-                    'flex h-full flex-col p-6 sm:p-7',
+                    'flex h-full flex-col p-6 sm:p-7 transition-all',
                     plan.featured &&
-                      'border-accent/70 bg-card/90 shadow-glow-sm',
+                      'border-2 border-accent bg-surface shadow-[4px_4px_0px_0px_#FFEE00]',
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -89,8 +89,8 @@ export function Membership() {
                       {plan.name}
                     </h3>
                     {plan.featured ? (
-                      <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-3 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-canvas">
-                        <Sparkles className="h-3 w-3" aria-hidden="true" />
+                      <span className="flex shrink-0 items-center gap-1.5 rounded-sm bg-accent px-3 py-1 font-mono text-[0.625rem] font-bold uppercase tracking-[0.14em] text-canvas">
+                        <Sparkles className="h-3 w-3 fill-canvas" aria-hidden="true" />
                         Most popular
                       </span>
                     ) : null}
@@ -113,10 +113,10 @@ export function Membership() {
                     {plan.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-3">
                         <span
-                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-lime/15"
+                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-accent/20"
                           aria-hidden="true"
                         >
-                          <Check className="h-3.5 w-3.5 text-lime" />
+                          <Check className="h-3.5 w-3.5 text-accent" />
                         </span>
                         <span className="text-sm leading-relaxed text-muted">
                           {feature}

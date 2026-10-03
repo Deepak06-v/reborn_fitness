@@ -13,10 +13,10 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
     <div
       ref={ref}
       className={cn(
-        'rounded bg-card/80 backdrop-blur-[16px] transition-colors duration-300 ease-out-expo',
+        'rounded-md bg-surface transition-all duration-200 ease-out-expo',
         'border border-hairline',
         interactive &&
-          'hover:border-accent/40 hover:bg-card/90 focus-within:border-accent/40',
+          'hover:border-accent focus-within:border-accent',
         className,
       )}
       {...rest}

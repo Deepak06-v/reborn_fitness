@@ -1,5 +1,4 @@
 import { Zap } from 'lucide-react'
-import { brand } from '../../data/site'
 import { useScrollTo } from '../../hooks/useScrollTo'
 
 /** Thumb-accessible conversion bar, mobile only. */
@@ -7,15 +6,15 @@ export function MobileCtaBar() {
   const scrollTo = useScrollTo()
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[95] border-t border-accent/20 bg-canvas/90 backdrop-blur-[16px] lg:hidden">
-      <div className="section-shell flex items-center gap-3 py-3">
+    <div className="fixed inset-x-0 bottom-0 z-[95] border-t border-hairline bg-canvas p-3 lg:hidden">
+      <div className="section-shell flex items-center justify-center">
         <button
           type="button"
           onClick={() => scrollTo('#trial-pass')}
-          className="flex min-h-[52px] flex-1 items-center justify-center gap-2 rounded-full bg-accent px-5 font-display text-xs font-bold uppercase tracking-[0.14em] text-canvas shadow-glow transition-transform active:scale-[0.98]"
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md border border-accent bg-accent px-5 font-display text-xs font-bold uppercase tracking-[0.14em] text-canvas shadow-[3px_3px_0px_0px_#FFFFFF] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
         >
-          <Zap className="h-4 w-4" aria-hidden="true" />
-          {brand.dayPassCta}
+          <Zap className="h-4 w-4 fill-canvas" aria-hidden="true" />
+          BOOK 1-DAY PASS
         </button>
       </div>
     </div>

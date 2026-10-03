@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy, Mail, MapPin, Phone, Radio } from 'lucide-react'
 import { brand } from '../../data/site'
-import { cn } from '../../lib/utils'
 import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { SectionHeading } from '../ui/SectionHeading'
@@ -91,64 +90,28 @@ export function Contact() {
             </Card>
           </div>
 
-          {/* Dark map container with glowing venue pin */}
-          <ScrollReveal direction="right">
-            <div className="relative h-full min-h-[22rem] overflow-hidden rounded-lg border border-hairline bg-surface">
-              <img
-                src="https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=1400&q=80"
-                alt=""
-                aria-hidden="true"
+          {/* Google Maps Embed */}
+          <ScrollReveal direction="right" className="flex h-full flex-col gap-4">
+            <div className="relative flex-1 min-h-[22rem] w-full overflow-hidden rounded-lg border border-hairline bg-zinc-900">
+              <iframe
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3153.835434509374!2d-122.4194155846816!3d37.77492957975903!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8085809c6c8f4459%3A0xb10ed6d9b5050f14!2sSan%20Francisco%2C%20CA!5e0!3m2!1sen!2sus!4v1611111111111!5m2!1sen!2sus"
+                className="absolute inset-0 h-full w-full opacity-80 mix-blend-luminosity invert grayscale contrast-125 hue-rotate-180"
+                style={{ border: 0 }}
+                allowFullScreen
                 loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover opacity-25 saturate-0"
+                referrerPolicy="no-referrer-when-downgrade"
+                title="Google Maps Location"
               />
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-[linear-gradient(rgba(39,39,42,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(39,39,42,0.5)_1px,transparent_1px)] bg-[size:56px_56px]"
-              />
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-surface/20"
-              />
-
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6">
-                <span className="relative flex h-16 w-16 items-center justify-center">
-                  <span
-                    aria-hidden="true"
-                    className="absolute inset-0 animate-dot-pulse rounded-full bg-accent/30 blur-lg"
-                  />
-                  <span
-                    className="relative flex h-11 w-11 items-center justify-center rounded-full bg-canvas/80 ring-2 ring-accent"
-                  >
-                    <MapPin className="h-5 w-5 text-accent" aria-hidden="true" />
-                  </span>
-                </span>
-
-                <div className="text-center">
-                  <p className="font-display text-lg font-bold uppercase tracking-[0.06em] text-white">
-                    {brand.name}
-                  </p>
-                  <p className="mt-1 font-mono text-[0.6875rem] uppercase tracking-[0.16em] text-accent">
-                    {brand.venueLine}
-                  </p>
-                  <p
-                    className={cn(
-                      'mt-3 max-w-xs font-mono text-[0.625rem] uppercase leading-relaxed tracking-[0.12em] text-dim',
-                    )}
-                  >
-                    {brand.address}
-                  </p>
-                </div>
-
-                <LinkButton
-                  href={brand.mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  size="lg"
-                >
-                  Open in Google Maps
-                </LinkButton>
-              </div>
             </div>
+            <LinkButton
+              href={brand.mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              size="lg"
+              fullWidth
+            >
+              Open in Google Maps
+            </LinkButton>
           </ScrollReveal>
         </div>
       </div>

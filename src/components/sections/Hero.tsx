@@ -13,7 +13,12 @@ const liveStats = [
   { id: 'cryo', label: 'Cryo bay status', icon: Snowflake, unit: '' },
 ]
 
-export function Hero() {
+interface HeroProps {
+  /** When true, the pre-loader has exited and the stagger reveal should fire. */
+  preloaderDone?: boolean
+}
+
+export function Hero({ preloaderDone = true }: HeroProps) {
   const scrollTo = useScrollTo()
   const [occupancy, setOccupancy] = useState(34)
 
@@ -33,24 +38,43 @@ export function Hero() {
       id="top"
       className="relative flex min-h-[100svh] items-center overflow-hidden pb-16 pt-[calc(var(--nav-h)+3rem)]"
     >
-      {/* atmospheric telemetry backdrop */}
+      {/* ────────── Hero Background Video ────────── */}
+      <video
+        src="./exercise-bg.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover mix-blend-luminosity"
+      />
+
+      {/* Cinematic dark gradient mask over the video */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#050505]/90 via-[#050505]/70 to-[#050505]"
+      />
+
+      {/* atmospheric telemetry backdrop (grid) */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-32 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-accent/10 blur-[140px]" />
-        <div className="absolute bottom-0 right-0 h-[26rem] w-[26rem] rounded-full bg-lime/5 blur-[130px]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(39,39,42,0.35)_1px,transparent_1px),linear-gradient(90deg,rgba(39,39,42,0.35)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_72%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(38,38,38,0.4)_1px,transparent_1px),linear-gradient(90deg,rgba(38,38,38,0.4)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
       </div>
 
       <div className="section-shell relative w-full">
         <div className="flex flex-col gap-10">
           <ScrollReveal direction="fade" className="flex items-center gap-3">
-            <span className="telemetry-dot" aria-hidden="true" />
-            <p className="label-telemetry text-lime">
+            <span className="telemetry-dot bg-accent" aria-hidden="true" />
+            <p className="label-telemetry text-accent">
               {brand.statusLabel} · {brand.venueLine}
             </p>
           </ScrollReveal>
 
-          <h1 className="display-xl max-w-[15ch]">
-            <StaggerText lines={['REBORN YOUR', 'LIMITS']} />
+          <h1 className="display-xl max-w-[15ch] text-white">
+            {preloaderDone ? (
+              <StaggerText lines={['REBORN YOUR', 'LIMITS']} />
+            ) : (
+              <span className="invisible">REBORN YOUR LIMITS</span>
+            )}
           </h1>
 
           <ScrollReveal direction="rise" delay={0.1}>
@@ -66,21 +90,15 @@ export function Hero() {
           >
             {liveStats.map((stat) => (
               <li key={stat.id} className="snap-item shrink-0">
-                <div className="flex h-full min-h-[56px] items-center gap-3 rounded-full border border-hairline bg-card/80 px-4 backdrop-blur-[16px]">
-                  <span
-                    className={
-                      stat.id === 'cryo'
-                        ? 'flex h-8 w-8 items-center justify-center rounded-full bg-accent/10 text-accent'
-                        : 'flex h-8 w-8 items-center justify-center rounded-full bg-lime/10 text-lime'
-                    }
-                  >
+                <div className="flex h-full min-h-[52px] items-center gap-3 rounded-md border border-hairline bg-surface px-4">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-sm bg-accent/15 text-accent">
                     <stat.icon className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="flex flex-col">
                     <span className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">
                       {stat.label}
                     </span>
-                    <span className="font-mono text-[0.75rem] uppercase tracking-[0.12em] text-white">
+                    <span className="font-mono text-[0.75rem] font-bold uppercase tracking-[0.12em] text-white">
                       {stat.id === 'occ'
                         ? `${occupancy}${stat.unit}`
                         : stat.id === 'cryo'
