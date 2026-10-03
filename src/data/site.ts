@@ -16,8 +16,8 @@ export const brand = {
   phoneHref: 'tel:+15125550188',
   emailDisplay: 'telemetry@rebornfitness.io',
   emailHref: 'mailto:telemetry@rebornfitness.io',
-  hoursLabel: 'Open Now — 24/7 Biometric Entry',
-  dayPassCta: 'Book 1-Day VIP Trial Pass',
+  hoursLabel: 'OPEN NOW — 24/7 ACCESS',
+  dayPassCta: 'BOOK 1-DAY VIP PASS',
 } as const
 
 export const navLinks: NavLink[] = [

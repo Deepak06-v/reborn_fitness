@@ -21,6 +21,17 @@ interface HeroProps {
 export function Hero({ preloaderDone = true }: HeroProps) {
   const scrollTo = useScrollTo()
   const [occupancy, setOccupancy] = useState(34)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false,
+  )
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Simulated live telemetry feed so the banner reads as a live instrument
   useEffect(() => {
@@ -38,9 +49,10 @@ export function Hero({ preloaderDone = true }: HeroProps) {
       id="top"
       className="relative flex min-h-[100svh] items-center overflow-hidden pb-16 pt-[calc(var(--nav-h)+3rem)]"
     >
-      {/* ────────── Hero Background Video ────────── */}
+      {/* ────────── Responsive Background Exercise Video (Single DOM Render) ────────── */}
       <video
-        src="./exercise-bg.mp4"
+        key={isMobile ? 'hero-mobile' : 'hero-desktop'}
+        src={isMobile ? './exercise-bg-mobile.mp4' : './exercise-bg-desktop.mp4'}
         autoPlay
         loop
         muted
@@ -49,10 +61,10 @@ export function Hero({ preloaderDone = true }: HeroProps) {
         className="pointer-events-none absolute inset-0 h-full w-full object-cover mix-blend-luminosity"
       />
 
-      {/* Cinematic dark gradient mask over the video */}
+      {/* Cinematic dark gradient mask over both videos */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#050505]/90 via-[#050505]/70 to-[#050505]"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#050505]/80 via-[#050505]/60 to-[#050505]"
       />
 
       {/* atmospheric telemetry backdrop (grid) */}

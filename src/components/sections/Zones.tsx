@@ -40,10 +40,10 @@ export function Zones() {
                 aria-controls={`panel-${zone.id}`}
                 onClick={() => setActiveId(zone.id)}
                 className={cn(
-                  'snap-item flex min-h-[52px] shrink-0 items-center gap-2.5 rounded-full border px-5 transition-colors',
+                  'snap-item flex min-h-[52px] shrink-0 items-center gap-2.5 rounded-md border px-5 transition-colors',
                   selected
-                    ? 'border-accent/60 bg-accent/10 text-white'
-                    : 'border-hairline text-muted hover:border-accent/40 hover:text-white',
+                    ? 'border-accent bg-accent/15 text-white font-semibold'
+                    : 'border-hairline text-muted hover:border-accent hover:text-white',
                 )}
               >
                 <span

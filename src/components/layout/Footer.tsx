@@ -16,12 +16,24 @@ export function Footer() {
       <div className="section-shell flex flex-col gap-10">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-sm">
-            <span className="flex items-center gap-2.5">
-              <span className="telemetry-dot" aria-hidden="true" />
-              <span className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white">
-                {brand.name}
-              </span>
-            </span>
+            <div className="flex items-center gap-3">
+              <img
+                src="./logo.png"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = './logo.svg'
+                }}
+                alt="REBORN FITNESS"
+                className="h-10 w-10 rounded-md border border-hairline bg-surface p-1 object-contain"
+              />
+              <div>
+                <span className="font-display text-base font-bold uppercase tracking-[0.16em] text-white">
+                  {brand.name}
+                </span>
+                <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent">
+                  Industrial Performance Campus
+                </p>
+              </div>
+            </div>
             <p className="mt-4 text-sm leading-relaxed text-muted">
               {brand.subheading}
             </p>

@@ -139,12 +139,33 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
 
     setSubmitting(true)
 
-    // TODO: Simulate API Call to Gym Owner
-    // In production, integrate Webhook (Zapier/Make) or EmailJS here:
-    // fetch('https://hooks.zapier.com/hooks/catch/12345/abcde/', {
+    // ──────────────────────────────────────────────────────────
+    // OWNER NOTIFICATION INTEGRATION POINT:
+    // To send this booking payload directly to the gym owner:
+    //
+    // OPTION A: EmailJS (https://www.emailjs.com/)
+    // emailjs.send('YOUR_SERVICE_ID', 'YOUR_TEMPLATE_ID', {
+    //   guest_name: selection.name,
+    //   guest_phone: selection.phone,
+    //   guest_email: selection.email,
+    //   training_goal: selection.goalId,
+    //   slot: `${selection.dayId} - ${selection.slotId}`,
+    //   assigned_coach: selection.coachId ?? 'Floor Support',
+    // }, 'YOUR_PUBLIC_KEY');
+    //
+    // OPTION B: Formspree (https://formspree.io/)
+    // fetch('https://formspree.io/f/YOUR_FORM_ID', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(selection),
+    // });
+    //
+    // OPTION C: Zapier / Make Webhook
+    // fetch('https://hooks.zapier.com/hooks/catch/XXXXX/YYYYY/', {
     //   method: 'POST',
     //   body: JSON.stringify(selection)
-    // })
+    // });
+    // ──────────────────────────────────────────────────────────
 
     window.setTimeout(() => {
       setSubmitting(false)
@@ -310,10 +331,20 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
                 </div>
               </fieldset>
 
-              <ScrollReveal direction="rise">
+              <ScrollReveal direction="rise" className="flex flex-col gap-3">
+                {submitting ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-3 rounded-md border border-accent bg-surface p-3 font-mono text-xs uppercase tracking-[0.12em] text-accent shadow-[3px_3px_0px_0px_#FFEE00]"
+                  >
+                    <span className="telemetry-dot bg-accent" aria-hidden="true" />
+                    <span>OWNER NOTIFIED. VERIFYING SECURE DETAILS...</span>
+                  </div>
+                ) : null}
+
                 <Button type="submit" size="lg" fullWidth disabled={submitting}>
                   {submitting ? (
-                    'Owner Notified. Verifying Details...'
+                    'OWNER NOTIFIED. VERIFYING SECURE DETAILS...'
                   ) : (
                     <>
                       Generate Digital Day Pass
@@ -327,7 +358,7 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
 
           <ScrollReveal direction="right" className="lg:sticky lg:top-28 lg:self-start">
             <Card className="overflow-hidden p-6 sm:p-8">
-              <p className="label-telemetry text-lime">Pass protocol</p>
+              <p className="label-telemetry text-accent">Pass protocol</p>
               <h3 className="display-lg mt-3 text-[1.75rem]">
                 What happens after you book
               </h3>
@@ -335,7 +366,7 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
                 {[
                   {
                     step: '01',
-                    text: 'A scannable QR pass with your unique entry code is generated instantly.',
+                    text: 'A high-contrast digital VIP boarding pass with your unique verification ID is generated instantly.',
                   },
                   {
                     step: '02',
@@ -391,43 +422,108 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
         {pass ? (
           <div className="flex flex-col gap-6">
             {/* Digital Industrial Boarding Pass */}
-            <div ref={ticketRef} className="relative overflow-hidden rounded-md border-2 border-dashed border-hairline bg-surface p-6 shadow-[4px_4px_0px_0px_#FFEE00]">
-              
-              <div className="flex items-start justify-between border-b border-hairline pb-4">
-                <div>
-                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent">Verification No.</p>
-                  <p className="mt-1 font-display text-xl font-bold tracking-widest text-white">
-                    PASS-RBN-{pass.entryCode}X
-                  </p>
+            <div
+              ref={ticketRef}
+              className="relative overflow-hidden rounded-md border-2 border-dashed border-accent/60 bg-[#121212] p-6 shadow-[4px_4px_0px_0px_#FFEE00]"
+            >
+              {/* Header: Logo, Brand & Status Pill */}
+              <div className="flex items-center justify-between border-b border-hairline pb-4">
+                <div className="flex items-center gap-3">
+                  <img
+                    src="./logo.png"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = './logo.svg'
+                    }}
+                    alt="REBORN FITNESS"
+                    className="h-10 w-10 rounded-sm border border-accent/40 bg-surface p-1 object-contain"
+                  />
+                  <div>
+                    <p className="font-display text-base font-bold uppercase tracking-[0.14em] text-white">
+                      REBORN FITNESS
+                    </p>
+                    <p className="font-mono text-[0.5625rem] uppercase tracking-[0.2em] text-accent">
+                      VIP TRIAL BOARDING PASS
+                    </p>
+                  </div>
                 </div>
-                <span className="flex items-center gap-1.5 rounded-sm border border-accent bg-accent text-canvas px-3 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] font-bold shadow-[2px_2px_0px_0px_#262626]">
+
+                <span className="flex items-center gap-1.5 rounded-sm border border-accent bg-accent px-3 py-1 font-mono text-[0.625rem] font-bold uppercase tracking-[0.14em] text-canvas shadow-[2px_2px_0px_0px_#262626]">
                   VALID: 24 HOURS
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-y-5 gap-x-4 pt-5">
+              {/* Unique Verification Number */}
+              <div className="mt-4 rounded border border-hairline bg-canvas/60 p-3">
+                <p className="font-mono text-[0.5625rem] uppercase tracking-[0.2em] text-dim">
+                  UNIQUE VERIFICATION ID
+                </p>
+                <p className="mt-1 font-display text-xl font-bold tracking-[0.18em] text-accent">
+                  PASS-RBN-{pass.entryCode}X
+                </p>
+              </div>
+
+              {/* Ticket Details Grid */}
+              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 border-b border-dashed border-hairline pb-5">
                 <div>
-                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Guest</p>
-                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.guestName}</p>
+                  <p className="font-mono text-[0.5625rem] uppercase tracking-[0.16em] text-dim">
+                    GUEST NAME
+                  </p>
+                  <p className="mt-0.5 truncate font-display text-sm font-semibold uppercase text-white">
+                    {pass.guestName}
+                  </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Focus</p>
-                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.goalLabel}</p>
+                  <p className="font-mono text-[0.5625rem] uppercase tracking-[0.16em] text-dim">
+                    TRAINING FOCUS
+                  </p>
+                  <p className="mt-0.5 truncate font-display text-sm font-semibold uppercase text-white">
+                    {pass.goalLabel}
+                  </p>
                 </div>
-                <div className="col-span-2">
-                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Window</p>
-                  <p className="mt-1 font-display text-sm font-semibold uppercase text-accent">{pass.dayLabel} · {pass.slotLabel}</p>
+                <div>
+                  <p className="font-mono text-[0.5625rem] uppercase tracking-[0.16em] text-dim">
+                    ACCESS WINDOW
+                  </p>
+                  <p className="mt-0.5 font-display text-xs font-semibold uppercase text-accent">
+                    {pass.dayLabel} · {pass.slotLabel}
+                  </p>
                 </div>
-                <div className="col-span-2">
-                  <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">Assigned Guide</p>
-                  <p className="mt-1 font-display text-sm font-semibold uppercase text-white">{pass.coachName ?? 'Floor Support'}</p>
+                <div>
+                  <p className="font-mono text-[0.5625rem] uppercase tracking-[0.16em] text-dim">
+                    ASSIGNED GUIDE
+                  </p>
+                  <p className="mt-0.5 truncate font-display text-xs font-semibold uppercase text-white">
+                    {pass.coachName ?? 'Floor Support'}
+                  </p>
                 </div>
+              </div>
+
+              {/* Industrial Barcode Graphic */}
+              <div className="mt-4 flex flex-col items-center justify-center gap-1.5 pt-1">
+                <div
+                  className="flex h-10 w-full items-end justify-center gap-[3px] overflow-hidden opacity-90"
+                  aria-hidden="true"
+                >
+                  {[4,2,6,1,3,5,2,4,1,6,3,2,5,1,4,2,3,6,1,5,2,4,3,1,6,2,5,3,1,4,2,6,1,3,5,2,4,1,6,3,2,5,1,4].map((w, i) => (
+                    <span
+                      key={i}
+                      className="inline-block bg-white"
+                      style={{
+                        width: `${w}px`,
+                        height: i % 7 === 0 ? '100%' : '85%',
+                      }}
+                    />
+                  ))}
+                </div>
+                <p className="font-mono text-[0.625rem] tracking-[0.24em] text-dim">
+                  * PASS-RBN-{pass.entryCode}X *
+                </p>
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
               <Button size="lg" fullWidth onClick={downloadTicket}>
-                Download Ticket
+                DOWNLOAD TICKET
               </Button>
               <Button variant="ghost" fullWidth onClick={reset}>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />

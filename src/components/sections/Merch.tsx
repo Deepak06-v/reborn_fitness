@@ -37,7 +37,7 @@ export function Merch() {
                     className="absolute inset-0 h-full w-full object-cover opacity-75 transition-transform duration-500 ease-out-expo hover:scale-105"
                   />
                   {product.limited ? (
-                    <span className="absolute left-3 top-3 rounded-full border border-lime/40 bg-canvas/70 px-2.5 py-1 font-mono text-[0.5625rem] uppercase tracking-[0.14em] text-lime backdrop-blur-[16px]">
+                    <span className="absolute left-3 top-3 rounded-sm border border-accent bg-surface/90 px-2.5 py-1 font-mono text-[0.5625rem] font-bold uppercase tracking-[0.14em] text-accent shadow-[2px_2px_0px_0px_#262626]">
                       Limited drop
                     </span>
                   ) : null}
@@ -52,14 +52,14 @@ export function Merch() {
                   </p>
 
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm tracking-[0.06em] text-white">
+                    <span className="font-mono text-sm font-bold tracking-[0.06em] text-white">
                       ${product.price}
                     </span>
                     <button
                       type="button"
                       onClick={() => addItem(product.id)}
                       aria-label={`Quick add ${product.name} to cart`}
-                      className="flex h-11 w-11 items-center justify-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/40 transition-colors hover:bg-accent hover:text-canvas"
+                      className="flex h-10 w-10 items-center justify-center rounded-md border border-accent bg-surface text-accent transition-all hover:bg-accent hover:text-canvas shadow-[2px_2px_0px_0px_#FFEE00] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                       <Plus className="h-4 w-4" aria-hidden="true" />
                     </button>

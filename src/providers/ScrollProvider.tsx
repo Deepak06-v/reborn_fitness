@@ -10,17 +10,29 @@ export function ScrollProvider({ children }: { children: ReactNode }) {
   const [lenisInstance, setLenisInstance] = useState<Lenis | null>(null)
 
   useEffect(() => {
+    // Zero-lag mobile optimization: ignore address-bar resize jumps
+    ScrollTrigger.config({ ignoreMobileResize: true })
+
     const prefersReducedMotion = window.matchMedia(
       '(prefers-reduced-motion: reduce)',
     ).matches
 
     if (prefersReducedMotion) return
 
+    // Detect if window.innerWidth < 768 or touch events are present
+    const isTouchOrMobile =
+      typeof window !== 'undefined' &&
+      (window.innerWidth < 768 ||
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0)
+
+    // DISABLE Lenis smooth scrolling on mobile. Allow native OS GPU-accelerated touch scrolling.
+    if (isTouchOrMobile) return
+
     const lenis = new Lenis({
       duration: 1.1,
       smoothWheel: true,
-      syncTouch: true,
-      touchMultiplier: 1.6,
+      syncTouch: false,
     })
     setLenisInstance(lenis)
 

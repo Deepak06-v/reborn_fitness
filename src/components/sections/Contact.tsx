@@ -107,10 +107,11 @@ export function Contact() {
               href={brand.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
+              variant="primary"
               size="lg"
               fullWidth
             >
-              Open in Google Maps
+              OPEN IN GOOGLE MAPS
             </LinkButton>
           </ScrollReveal>
         </div>

@@ -140,9 +140,9 @@ export function CartDrawer() {
                           type="button"
                           onClick={() => decrement(product.id)}
                           aria-label={`Decrease ${product.name} quantity`}
-                          className="flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white"
+                          className="flex h-9 w-9 items-center justify-center rounded-md border border-hairline text-muted transition-colors hover:border-accent hover:text-white"
                         >
-                          <Minus className="h-4 w-4" aria-hidden="true" />
+                          <Minus className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                         <span className="w-6 text-center font-mono text-sm text-white">
                           {quantity}
@@ -151,9 +151,9 @@ export function CartDrawer() {
                           type="button"
                           onClick={() => increment(product.id)}
                           aria-label={`Increase ${product.name} quantity`}
-                          className="flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white"
+                          className="flex h-9 w-9 items-center justify-center rounded-md border border-hairline text-muted transition-colors hover:border-accent hover:text-white"
                         >
-                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
 
@@ -161,9 +161,9 @@ export function CartDrawer() {
                         type="button"
                         onClick={() => removeItem(product.id)}
                         aria-label={`Remove ${product.name}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-dim transition-colors hover:border-red-400/50 hover:text-red-300"
+                        className="flex h-9 w-9 items-center justify-center rounded-md border border-hairline text-dim transition-colors hover:border-red-400/50 hover:text-red-300"
                       >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>

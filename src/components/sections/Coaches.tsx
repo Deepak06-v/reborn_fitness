@@ -63,14 +63,14 @@ export function Coaches({ onBookWithCoach }: CoachesProps) {
                   </ul>
 
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
                     fullWidth
                     className="mt-5"
                     onClick={() => onBookWithCoach(coach.id)}
                   >
-                    Book trial with this coach
-                    <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    BOOK WITH THIS COACH
+                    <ArrowUpRight className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
                   </Button>
                 </div>
               </Card>

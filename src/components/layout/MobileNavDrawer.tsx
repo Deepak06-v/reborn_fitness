@@ -114,9 +114,16 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
       >
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-2.5">
-            <span className="telemetry-dot" aria-hidden="true" />
+            <img
+              src="./logo.png"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = './logo.svg'
+              }}
+              alt="REBORN FITNESS"
+              className="h-7 w-7 rounded-sm border border-hairline bg-surface p-0.5 object-contain"
+            />
             <span className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white">
-              {brand.shortName}
+              {brand.name}
             </span>
           </span>
           <button

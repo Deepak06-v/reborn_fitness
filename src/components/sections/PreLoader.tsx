@@ -17,7 +17,18 @@ export function PreLoader({ onComplete }: PreLoaderProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [visible, setVisible] = useState(true)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false,
+  )
   const hasTriggered = useRef(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const triggerExit = () => {
     if (hasTriggered.current) return
@@ -47,11 +58,15 @@ export function PreLoader({ onComplete }: PreLoaderProps) {
 
     // Scale video down slightly first
     if (video) {
-      tl.to(video, {
-        scale: 0.85,
-        duration: 0.6,
-        ease: 'power3.inOut',
-      })
+      tl.to(
+        video,
+        {
+          scale: 0.85,
+          duration: 0.6,
+          ease: 'power3.inOut',
+        },
+        0,
+      )
     }
 
     // Fade entire overlay
@@ -89,9 +104,11 @@ export function PreLoader({ onComplete }: PreLoaderProps) {
         <div className="absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/8 blur-[120px]" />
       </div>
 
+      {/* Conditionally render ONLY ONE landing animation video based on isMobile */}
       <video
+        key={isMobile ? 'mobile-anim' : 'desktop-anim'}
         ref={videoRef}
-        src="./logo-anim.mp4"
+        src={isMobile ? './logo-anim-mobile.mp4' : './logo-anim-desktop.mp4'}
         autoPlay
         muted
         playsInline

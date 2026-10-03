@@ -25,8 +25,8 @@ export function Faq() {
                 <ScrollReveal key={faq.question} direction="rise" delay={index * 0.05}>
                   <div
                     className={cn(
-                      'overflow-hidden rounded border bg-card/80 backdrop-blur-[16px] transition-colors duration-300',
-                      open ? 'border-accent/40' : 'border-hairline',
+                      'overflow-hidden rounded-md border bg-surface transition-all duration-200',
+                      open ? 'border-accent shadow-[3px_3px_0px_0px_#FFEE00]' : 'border-hairline',
                     )}
                   >
                     <h3>
@@ -57,9 +57,9 @@ export function Faq() {
                         </span>
                         <span
                           className={cn(
-                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors',
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors',
                             open
-                              ? 'border-accent/60 bg-accent/10 text-accent'
+                              ? 'border-accent bg-accent text-canvas font-bold'
                               : 'border-hairline text-dim',
                           )}
                           aria-hidden="true"
