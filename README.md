@@ -130,6 +130,29 @@ The first start creates the admin account from `ADMIN_USERNAME`/`ADMIN_PASSWORD`
 (see [Create the first admin](#create-the-first-admin)); later starts leave it
 untouched.
 
+#### Deploying the frontend on Vercel
+
+The frontend is a client-side React (React Router) SPA, so deep links such as
+`/admin` must be rewritten to `index.html` for the router to render them.
+`vercel.json` does this and also proxies `/api/*` to the Render backend:
+
+- **SPA fallback** — any path that is not a static asset is served `index.html`,
+  so directly opening `/admin`, `/admin/login`, `/admin/members`, etc. loads the
+  SPA instead of a 404.
+- **API proxy** — `/api/*` is rewritten to `https://reborn-fitness.onrender.com/api/*`.
+  Because the browser always talks to the frontend origin, the session and CSRF
+  cookies work normally (no CORS, no `SameSite` changes), and the admin console
+  keeps using its relative `/api/admin/...` calls unchanged.
+
+Vercel settings for this repository:
+
+- **Framework Preset:** Vite
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Install Command:** `npm install`
+
+No dashboard rewrites are required — the rules live in `vercel.json`.
+
 #### Deploying the API on Render
 
 The API is a self-contained package in `server/`, so point the service at that
