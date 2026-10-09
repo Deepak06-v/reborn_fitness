@@ -151,7 +151,7 @@ export function Hero({ preloaderDone = true }: HeroProps) {
                 scrollTo('#facilities')
               }}
             >
-              Explore Telemetry & Zones
+              See Inside the Gym
             </LinkButton>
           </ScrollReveal>
         </div>

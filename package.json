@@ -6,9 +6,16 @@
   "description": "Neo-Brutalist gym website built with React, Vite, Tailwind CSS, GSAP, and Lenis.",
   "scripts": {
     "dev": "vite",
+    "dev:server": "npm --prefix server run dev",
+    "dev:full": "concurrently -n web,api -c cyan,yellow \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc -b && vite build",
+    "build:server": "npm --prefix server run build",
+    "start:server": "npm --prefix server start",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test:server": "npm --prefix server test",
+    "seed:admin": "npm --prefix server run create-admin",
+    "install:all": "npm install && npm --prefix server install"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -19,6 +26,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-qr-code": "^2.2.0",
+    "react-router-dom": "^6.30.6",
     "tailwind-merge": "^2.5.0"
   },
   "devDependencies": {
@@ -29,6 +37,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.6.1",
+    "concurrently": "^9.2.5",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",

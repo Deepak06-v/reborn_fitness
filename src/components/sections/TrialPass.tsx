@@ -278,7 +278,7 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
                       value={selection.phone}
                       onChange={(v) => update('phone', v)}
                       error={errors.phone}
-                      placeholder="+1 (512) 555-0188"
+                      placeholder="+91 98765 43210"
                       autoComplete="tel"
                     />
                     <Field
@@ -338,13 +338,13 @@ export function TrialPass({ requestedCoachId }: TrialPassProps) {
                     className="flex items-center gap-3 rounded-md border border-accent bg-surface p-3 font-mono text-xs uppercase tracking-[0.12em] text-accent shadow-[3px_3px_0px_0px_#FFEE00]"
                   >
                     <span className="telemetry-dot bg-accent" aria-hidden="true" />
-                    <span>OWNER NOTIFIED. VERIFYING SECURE DETAILS...</span>
+                    <span>GENERATING YOUR DIGITAL PASS...</span>
                   </div>
                 ) : null}
 
                 <Button type="submit" size="lg" fullWidth disabled={submitting}>
                   {submitting ? (
-                    'OWNER NOTIFIED. VERIFYING SECURE DETAILS...'
+                    'GENERATING YOUR DIGITAL PASS...'
                   ) : (
                     <>
                       Generate Digital Day Pass

@@ -1,14 +1,62 @@
-import { useState } from 'react'
-import { Gauge, Thermometer, Users } from 'lucide-react'
-import { zones } from '../../data/zones'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Pause, Play } from 'lucide-react'
+import { facilityPhotos, type FacilityPhoto } from '../../data/facilityImages'
 import { cn } from '../../lib/utils'
-import { Card } from '../ui/Card'
-import { SectionHeading } from '../ui/SectionHeading'
-import { ScrollReveal } from '../animations/ScrollReveal'
+
+/** One animated copy must repeat at least this many cards so it always exceeds the viewport. */
+const COPY_MIN_ITEMS = 8
+/** Start row two from a different photo so the two rows never look identical. */
+const ROW_TWO_OFFSET = 2
+
+function rotate<T>(items: T[], by: number): T[] {
+  if (items.length === 0) return items
+  const offset = ((by % items.length) + items.length) % items.length
+  return [...items.slice(offset), ...items.slice(0, offset)]
+}
+
+/**
+ * Build one seamless "copy" of the marquee track: the photos rotated by `offset`
+ * and repeated until the copy is comfortably wider than any viewport. The track
+ * renders this copy twice and animates `translateX(-50%)`, so the loop point
+ * always lands exactly on the start of the second copy.
+ */
+function buildSequence(offset: number): FacilityPhoto[] {
+  const rotated = rotate(facilityPhotos, offset)
+  const reps = Math.max(1, Math.ceil(COPY_MIN_ITEMS / rotated.length))
+  return Array.from({ length: reps }, () => rotated).flat()
+}
 
 export function Zones() {
-  const [activeId, setActiveId] = useState(zones[0].id)
-  const activeZone = zones.find((zone) => zone.id === activeId) ?? zones[0]
+  const [reduced, setReduced] = useState(false)
+  const [userPaused, setUserPaused] = useState(false)
+  const [interacting, setInteracting] = useState(false)
+  const resumeTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const sync = () => setReduced(query.matches)
+    sync()
+    query.addEventListener('change', sync)
+    return () => query.removeEventListener('change', sync)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (resumeTimer.current) window.clearTimeout(resumeTimer.current)
+    },
+    [],
+  )
+
+  const rowOne = useMemo(() => buildSequence(0), [])
+  const rowTwo = useMemo(() => buildSequence(ROW_TWO_OFFSET), [])
+
+  const paused = !reduced && (userPaused || interacting)
+
+  const handleInteractStart = () => setInteracting(true)
+  const handleInteractEnd = () => {
+    if (resumeTimer.current) window.clearTimeout(resumeTimer.current)
+    resumeTimer.current = window.setTimeout(() => setInteracting(false), 2200)
+  }
 
   return (
     <section
@@ -16,183 +64,161 @@ export function Zones() {
       className="scroll-mt-[var(--nav-h)] border-t border-hairline bg-surface/30 py-20 sm:py-28"
     >
       <div className="section-shell">
-        <SectionHeading
-          eyebrow="Facility Telemetry / 02"
-          title="Four zones. One instrumented floor."
-          description="Every rack, treadmill, plunge tank and turf lane is tracked against your recovery baseline. Tap a zone to read its load, climate and live spec sheet."
-        />
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <span className="h-px w-8 bg-accent/60" aria-hidden="true" />
+              <p className="label-telemetry text-accent">Inside Reborn Fitness</p>
+            </div>
+            <h2 className="display-lg max-w-[20ch] text-balance">
+              Built to move. Made to perform.
+            </h2>
+          </div>
 
-        {/* Horizontal swipeable tab rail on mobile, wrapped row on desktop */}
-        <div
-          role="tablist"
-          aria-label="Facility zones"
-          className="-mx-5 mt-10 flex snap-row gap-2 overflow-x-auto px-5 pb-2 no-scrollbar sm:mx-0 sm:flex-wrap sm:px-0"
-        >
-          {zones.map((zone) => {
-            const selected = zone.id === activeId
-            return (
-              <button
-                key={zone.id}
-                type="button"
-                role="tab"
-                id={`tab-${zone.id}`}
-                aria-selected={selected}
-                aria-controls={`panel-${zone.id}`}
-                onClick={() => setActiveId(zone.id)}
-                className={cn(
-                  'snap-item flex min-h-[52px] shrink-0 items-center gap-2.5 rounded-md border px-5 transition-colors',
-                  selected
-                    ? 'border-accent bg-accent/15 text-white font-semibold'
-                    : 'border-hairline text-muted hover:border-accent hover:text-white',
-                )}
-              >
-                <span
-                  className={cn(
-                    'font-mono text-[0.6875rem] tracking-[0.16em]',
-                    selected ? 'text-accent' : 'text-dim',
-                  )}
-                >
-                  {zone.code}
-                </span>
-                <span className="whitespace-nowrap font-display text-xs font-semibold uppercase tracking-[0.08em]">
-                  {zone.name}
-                </span>
-              </button>
-            )
-          })}
+          {!reduced ? (
+            <button
+              type="button"
+              onClick={() => setUserPaused((value) => !value)}
+              aria-pressed={userPaused}
+              className="mb-1 inline-flex min-h-[48px] shrink-0 items-center gap-2 rounded-md border border-hairline bg-surface px-5 font-display text-xs font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent hover:text-white"
+            >
+              {userPaused ? (
+                <Play className="h-4 w-4 text-accent" aria-hidden="true" />
+              ) : (
+                <Pause className="h-4 w-4 text-accent" aria-hidden="true" />
+              )}
+              {userPaused ? 'Play gallery' : 'Pause gallery'}
+            </button>
+          ) : null}
         </div>
 
-        <ScrollReveal
-          key={activeZone.id}
-          direction="rise"
-          className="mt-8"
-        >
-          <Card
-            role="tabpanel"
-            id={`panel-${activeZone.id}`}
-            aria-labelledby={`tab-${activeZone.id}`}
-            className="overflow-hidden"
-          >
-            <div className="grid lg:grid-cols-2">
-              <div className="relative aspect-[4/3] overflow-hidden lg:aspect-auto lg:min-h-[26rem]">
-                <img
-                  key={activeZone.image}
-                  src={activeZone.image}
-                  alt={activeZone.name}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover opacity-70"
-                />
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent lg:bg-gradient-to-r"
-                />
-                <span className="absolute left-5 top-5 rounded-full border border-accent/40 bg-canvas/70 px-3 py-1.5 font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent backdrop-blur-[16px]">
-                  {activeZone.code}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-6 p-6 sm:p-8">
-                <div>
-                  <h3 className="display-lg text-[1.75rem]">
-                    {activeZone.name}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted">
-                    {activeZone.tagline}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Metric
-                    icon={Thermometer}
-                    label="Zone climate"
-                    value={activeZone.temperature}
-                  />
-                  <Metric
-                    icon={Users}
-                    label="Live capacity"
-                    value={activeZone.capacity}
-                  />
-                </div>
-
-                <ul className="flex flex-col gap-3">
-                  {activeZone.specs.map((spec) => (
-                    <li
-                      key={spec}
-                      className="flex items-start gap-3 text-sm text-muted"
-                    >
-                      <span
-                        className="mt-[0.55rem] h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                        aria-hidden="true"
-                      />
-                      {spec}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </Card>
-        </ScrollReveal>
-
-        {/* Quick spec strip for every zone */}
-        <div className="-mx-5 mt-4 flex snap-row gap-3 overflow-x-auto px-5 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0 lg:grid-cols-4">
-          {zones.map((zone) => (
-            <ScrollReveal
-              key={zone.id}
-              direction="scale"
-              as="article"
-              className="snap-item shrink-0 sm:shrink"
-            >
-              <Card
-                interactive
-                onClick={() => setActiveId(zone.id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    setActiveId(zone.id)
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={`Show ${zone.name} zone details`}
-                className="w-[15rem] cursor-pointer p-5 sm:w-auto"
-              >
-                <span className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">
-                  {zone.code}
-                </span>
-                <h3 className="mt-2 font-display text-sm font-semibold uppercase tracking-[0.06em] text-white">
-                  {zone.name}
-                </h3>
-                <p className="mt-2 flex items-center gap-2 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-accent">
-                  <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
-                  {zone.capacity}
-                </p>
-              </Card>
-            </ScrollReveal>
-          ))}
+        <div className="mt-10 flex flex-col gap-8 sm:gap-10">
+          <MarqueeRow
+            label="Row 01 · Moving left"
+            photos={rowOne}
+            reduced={reduced}
+            paused={paused}
+            variant="left"
+            onInteractStart={handleInteractStart}
+            onInteractEnd={handleInteractEnd}
+          />
+          <MarqueeRow
+            label="Row 02 · Moving right"
+            photos={rowTwo}
+            reduced={reduced}
+            paused={paused}
+            variant="right"
+            onInteractStart={handleInteractStart}
+            onInteractEnd={handleInteractEnd}
+            className="hidden md:block"
+          />
         </div>
       </div>
     </section>
   )
 }
 
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Gauge
+interface MarqueeRowProps {
   label: string
-  value: string
-}) {
+  photos: FacilityPhoto[]
+  reduced: boolean
+  paused: boolean
+  variant: 'left' | 'right'
+  onInteractStart: () => void
+  onInteractEnd: () => void
+  className?: string
+}
+
+function MarqueeRow({
+  label,
+  photos,
+  reduced,
+  paused,
+  variant,
+  onInteractStart,
+  onInteractEnd,
+  className,
+}: MarqueeRowProps) {
+  // Animated rows duplicate the copy so `translateX(-50%)` loops seamlessly.
+  // Reduced-motion rows render a single copy and scroll natively instead.
+  const cards = reduced ? photos : [...photos, ...photos]
+
   return (
-    <div className="rounded border border-hairline p-4">
-      <span className="flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-        <span className="label-telemetry">{label}</span>
-      </span>
-      <span className="mt-2 block font-mono text-sm uppercase tracking-[0.1em] text-white">
-        {value}
-      </span>
+    <div className={cn(className)}>
+      <p className="mb-3 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-dim">
+        {label}
+      </p>
+
+      <div
+        className={cn(
+          'gallery-row -mx-5 sm:-mx-8',
+          reduced
+            ? 'no-scrollbar touch-pan-x overflow-x-auto'
+            : 'touch-pan-y overflow-hidden',
+        )}
+        onPointerDown={reduced ? undefined : onInteractStart}
+        onPointerUp={reduced ? undefined : onInteractEnd}
+        onPointerCancel={reduced ? undefined : onInteractEnd}
+        onPointerLeave={reduced ? undefined : onInteractEnd}
+      >
+        <div
+          className={cn(
+            'flex w-max',
+            !reduced && 'marquee-track will-change-transform',
+            !reduced && variant === 'left' && 'animate-marquee',
+            !reduced && variant === 'right' && 'animate-marquee-reverse',
+            paused && 'is-paused',
+          )}
+        >
+          {cards.map((photo, index) => (
+            <PhotoCard
+              key={`${variant}-${photo.src}-${index}`}
+              photo={photo}
+              eager={index < 3}
+            />
+          ))}
+        </div>
+      </div>
     </div>
+  )
+}
+
+function PhotoCard({
+  photo,
+  eager,
+}: {
+  photo: FacilityPhoto
+  eager: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+
+  return (
+    <figure className="m-0 w-[85vw] max-w-[22rem] shrink-0 px-1.5 sm:w-[24rem] sm:max-w-none sm:px-2 lg:w-[30rem]">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-md border border-hairline bg-card-alt sm:aspect-[3/2]">
+        {failed ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(120%_120%_at_50%_0%,rgb(var(--color-card-alt))_0%,rgb(var(--color-canvas))_70%)]">
+            <span className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.24em] text-dim">
+              Reborn Fitness
+            </span>
+          </div>
+        ) : (
+          <img
+            src={photo.src}
+            alt={photo.alt}
+            loading={eager ? 'eager' : 'lazy'}
+            decoding="async"
+            onError={() => setFailed(true)}
+            style={photo.focalPoint ? { objectPosition: photo.focalPoint } : undefined}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+
+        {photo.caption && !failed ? (
+          <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-canvas/85 to-transparent p-4 font-mono text-[0.625rem] uppercase tracking-[0.16em] text-white/90">
+            {photo.caption}
+          </figcaption>
+        ) : null}
+      </div>
+    </figure>
   )
 }

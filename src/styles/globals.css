@@ -24,13 +24,25 @@
   html {
     -webkit-text-size-adjust: 100%;
     scroll-behavior: auto;
+    /*
+     * Mobile layout guard. GSAP entrance reveals (notably `direction="right"`
+     * which starts elements at x: +40) and oversized fixed overlays would
+     * otherwise create horizontal overflow on first paint, making mobile
+     * browsers shrink-to-fit ("zoomed out with space on the right") until a
+     * scroll settles the transforms. `clip` removes the overflow without
+     * establishing a scroll container (so vertical scroll and position:sticky
+     * keep working); `hidden` is the fallback for older engines.
+     */
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   body {
     @apply bg-canvas font-body text-muted antialiased;
     /* clears the fixed mobile CTA bar */
     padding-bottom: var(--bar-h);
-    overflow-x: hidden;
+    width: 100%;
+    overflow-x: clip;
   }
 
   @media (min-width: 1024px) {
@@ -124,6 +136,29 @@
 
   .rule {
     @apply h-px w-full bg-gradient-to-r from-transparent via-hairline to-transparent;
+  }
+
+  /*
+   * "Inside Reborn Fitness" gallery marquee.
+   * Autoplay is paused on hover (fine pointers only) and whenever the track
+   * carries `.is-paused` (user pause, touch interaction). Reduced-motion users
+   * get no animation at all and use the native horizontal scroller instead.
+   */
+  @media (hover: hover) and (pointer: fine) {
+    .gallery-row:hover .marquee-track {
+      animation-play-state: paused;
+    }
+  }
+
+  .marquee-track.is-paused {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none !important;
+      transform: none !important;
+    }
   }
 }
 

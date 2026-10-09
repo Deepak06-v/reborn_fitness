@@ -40,10 +40,20 @@ const config: Config = {
           '0%': { transform: 'translateY(-100%)' },
           '100%': { transform: 'translateY(400%)' },
         },
+        marquee: {
+          '0%': { transform: 'translate3d(0, 0, 0)' },
+          '100%': { transform: 'translate3d(-50%, 0, 0)' },
+        },
+        'marquee-reverse': {
+          '0%': { transform: 'translate3d(-50%, 0, 0)' },
+          '100%': { transform: 'translate3d(0, 0, 0)' },
+        },
       },
       animation: {
         'dot-pulse': 'dot-pulse 1.6s ease-in-out infinite',
         'scan-line': 'scan-line 2.4s linear infinite',
+        marquee: 'marquee 90s linear infinite',
+        'marquee-reverse': 'marquee-reverse 110s linear infinite',
       },
     },
   },

@@ -1,149 +1,161 @@
-import { useState } from 'react'
-import { Check, Snowflake, Sparkles } from 'lucide-react'
-import { ANNUAL_DISCOUNT, plans } from '../../data/plans'
+import { Check, Gift, Instagram, Sparkles, Tag } from 'lucide-react'
+import type { Plan } from '../../types'
+import { plans } from '../../data/plans'
+import { brand, social } from '../../data/site'
 import { cn } from '../../lib/utils'
-import { Button } from '../ui/Button'
+import { LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { SectionHeading } from '../ui/SectionHeading'
 import { ScrollReveal } from '../animations/ScrollReveal'
-import { useScrollTo } from '../../hooks/useScrollTo'
 
-type Cycle = 'monthly' | 'annual'
+function inr(value: number) {
+  return `₹${value.toLocaleString('en-IN')}`
+}
 
-function formatPrice(monthlyPrice: number, cycle: Cycle) {
-  if (cycle === 'monthly') return monthlyPrice
-  return Math.round(monthlyPrice * (1 - ANNUAL_DISCOUNT))
+/**
+ * Honest enquiry link: opens the member's mail client pre-filled with the plan
+ * they are asking about. No payment is taken on the website.
+ */
+function enquiryHref(plan: Plan) {
+  const priceLine = plan.saving
+    ? `Offer price ${inr(plan.offerPrice)} (regular ${inr(
+        plan.regularPrice,
+      )}, save ${inr(plan.saving)}), duration ${plan.duration}.`
+    : `Price ${inr(plan.offerPrice)}, duration ${plan.duration}.`
+  const subject = `Membership enquiry: ${plan.name}`
+  const body = `Hi Chandan,\n\nI'm interested in the ${plan.name} plan. ${priceLine}\n\nPlease share the next steps to join.\n\nThanks!`
+  return `${brand.emailHref}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`
 }
 
 export function Membership() {
-  const [cycle, setCycle] = useState<Cycle>('monthly')
-  const scrollTo = useScrollTo()
-
   return (
-    <section
-      id="memberships"
-      className="scroll-mt-[var(--nav-h)] py-20 sm:py-28"
-    >
+    <section id="memberships" className="scroll-mt-[var(--nav-h)] py-20 sm:py-28">
       <div className="section-shell">
         <SectionHeading
-          eyebrow="Subscriptions / 03"
-          title="Pick your output tier"
-          description="Three access levels, one standard: instrumented training with no guesswork. Switch or pause from the app at any time."
+          eyebrow="Memberships / 03"
+          title="Simple membership plans"
+          description="Four straightforward packages with clear pricing in Indian Rupees. Longer plans include a genuine discount — ask us about any of them."
           align="center"
           className="mx-auto items-center"
         />
 
-        <div className="mt-10 flex justify-center">
-          <div
-            role="group"
-            aria-label="Billing cycle"
-            className="inline-flex items-center gap-1 rounded-md border border-hairline bg-surface p-1.5"
-          >
-            {(['monthly', 'annual'] as Cycle[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setCycle(option)}
-                aria-pressed={cycle === option}
+        <ul className="mt-10 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          {plans.map((plan, index) => (
+            <ScrollReveal key={plan.id} direction="rise" delay={index * 0.08}>
+              <Card
+                interactive
                 className={cn(
-                  'flex min-h-[48px] items-center gap-2 rounded-md px-5 font-display text-xs font-semibold uppercase tracking-[0.14em] transition-colors',
-                  cycle === option
-                    ? 'bg-accent text-canvas font-bold'
-                    : 'text-muted hover:text-white',
+                  'flex h-full flex-col p-6 transition-all sm:p-7',
+                  plan.featured &&
+                    'border-2 border-accent bg-surface shadow-[4px_4px_0px_0px_#FFEE00]',
                 )}
               >
-                {option}
-                {option === 'annual' ? (
-                  <span
-                    className={cn(
-                      'font-mono text-[0.625rem] tracking-[0.1em]',
-                      cycle === option ? 'text-canvas/80' : 'text-accent',
-                    )}
-                  >
-                    Save 20%
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-display text-lg font-bold uppercase tracking-[0.02em] text-white">
+                    {plan.name}
+                  </h3>
+                  <span className="shrink-0 rounded-sm border border-hairline px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-muted">
+                    {plan.duration}
                   </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </div>
+                </div>
 
-        <ul className="mt-10 grid gap-6 md:grid-cols-3">
-          {plans.map((plan, index) => {
-            const price = formatPrice(plan.monthlyPrice, cycle)
-            const isDayPass = plan.id === 'day'
-            const suffix = isDayPass ? '/ day' : '/ mo'
-
-            return (
-              <ScrollReveal key={plan.id} direction="rise" delay={index * 0.08}>
-                <Card
-                  interactive
-                  className={cn(
-                    'flex h-full flex-col p-6 sm:p-7 transition-all',
-                    plan.featured &&
-                      'border-2 border-accent bg-surface shadow-[4px_4px_0px_0px_#FFEE00]',
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className="font-display text-lg font-bold uppercase tracking-[0.02em] text-white">
-                      {plan.name}
-                    </h3>
+                {plan.featured || plan.badge ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {plan.featured ? (
-                      <span className="flex shrink-0 items-center gap-1.5 rounded-sm bg-accent px-3 py-1 font-mono text-[0.625rem] font-bold uppercase tracking-[0.14em] text-canvas">
+                      <span className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1 font-mono text-[0.625rem] font-bold uppercase tracking-[0.14em] text-canvas">
                         <Sparkles className="h-3 w-3 fill-canvas" aria-hidden="true" />
                         Most popular
                       </span>
                     ) : null}
+                    {plan.badge ? (
+                      <span className="flex items-center gap-1.5 rounded-sm border border-accent/50 px-3 py-1 font-mono text-[0.625rem] font-bold uppercase tracking-[0.14em] text-accent">
+                        <Gift className="h-3 w-3" aria-hidden="true" />
+                        {plan.badge}
+                      </span>
+                    ) : null}
                   </div>
+                ) : null}
 
-                  <p className="mt-2 text-sm leading-relaxed text-muted">
-                    {plan.blurb}
-                  </p>
+                <p className="mt-3 text-sm leading-relaxed text-muted">
+                  {plan.blurb}
+                </p>
 
-                  <p className="mt-6 flex items-baseline gap-1.5">
+                <div className="mt-6">
+                  <p className="flex items-baseline gap-1.5">
                     <span className="font-display text-4xl font-bold tracking-[-0.03em] text-white">
-                      ${price}
+                      {inr(plan.offerPrice)}
                     </span>
                     <span className="font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-dim">
-                      {cycle === 'annual' && !isDayPass ? '/ mo, billed annually' : suffix}
+                      / {plan.duration}
                     </span>
                   </p>
 
-                  <ul className="mt-6 flex flex-1 flex-col gap-3">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3">
-                        <span
-                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-accent/20"
-                          aria-hidden="true"
-                        >
-                          <Check className="h-3.5 w-3.5 text-accent" />
-                        </span>
-                        <span className="text-sm leading-relaxed text-muted">
-                          {feature}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {plan.saving ? (
+                    <p className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm text-dim line-through">
+                        {inr(plan.regularPrice)}
+                      </span>
+                      <span className="flex items-center gap-1 font-mono text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-accent">
+                        <Tag className="h-3 w-3" aria-hidden="true" />
+                        Save {inr(plan.saving)}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-2 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-dim">
+                      No contract — pay for one month
+                    </p>
+                  )}
+                </div>
 
-                  <Button
-                    variant={plan.featured ? 'primary' : 'secondary'}
-                    size="lg"
-                    fullWidth
-                    className="mt-7"
-                    onClick={() => scrollTo('#trial-pass')}
-                  >
-                    {isDayPass ? 'Claim day pass' : 'Start membership'}
-                  </Button>
-                </Card>
-              </ScrollReveal>
-            )
-          })}
+                <ul className="mt-6 flex flex-1 flex-col gap-3">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-3">
+                      <span
+                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-accent/20"
+                        aria-hidden="true"
+                      >
+                        <Check className="h-3.5 w-3.5 text-accent" />
+                      </span>
+                      <span className="text-sm leading-relaxed text-muted">
+                        {feature}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <LinkButton
+                  href={enquiryHref(plan)}
+                  variant={plan.featured ? 'primary' : 'secondary'}
+                  size="lg"
+                  fullWidth
+                  className="mt-7"
+                  aria-label={`Enquire about the ${plan.name} membership plan`}
+                >
+                  Enquire About This Plan
+                </LinkButton>
+              </Card>
+            </ScrollReveal>
+          ))}
         </ul>
 
-        <p className="mt-6 flex items-center justify-center gap-2 text-center font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-dim">
-          <Snowflake className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-          Recovery suite access included from the Athlete tier upward
-        </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 text-center">
+          <p className="max-w-[52ch] text-sm leading-relaxed text-muted">
+            Prices reflect the current in-gym offers. Message us on Instagram for
+            the latest updates and to get started.
+          </p>
+          <LinkButton
+            href={social.instagram.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="secondary"
+            size="lg"
+          >
+            <Instagram className="h-4 w-4 text-accent" aria-hidden="true" />
+            Follow Us on Instagram
+          </LinkButton>
+        </div>
       </div>
     </section>
   )

@@ -1,21 +1,56 @@
 import { useState } from 'react'
-import { Check, Copy, Mail, MapPin, Phone, Radio } from 'lucide-react'
-import { brand } from '../../data/site'
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  Instagram,
+  Mail,
+  MapPin,
+  Phone,
+  Radio,
+  UserRound,
+} from 'lucide-react'
+import { brand, social, trainer } from '../../data/site'
 import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { SectionHeading } from '../ui/SectionHeading'
 import { ScrollReveal } from '../animations/ScrollReveal'
 
+type CopyState = 'idle' | 'copied' | 'error'
+
+/** Legacy fallback for browsers/environments without the async Clipboard API. */
+function fallbackCopy(value: string): boolean {
+  try {
+    const el = document.createElement('textarea')
+    el.value = value
+    el.setAttribute('readonly', '')
+    el.style.position = 'fixed'
+    el.style.top = '-9999px'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export function Contact() {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<CopyState>('idle')
 
   const copyAddress = async () => {
+    const value = brand.address
     try {
-      await navigator.clipboard.writeText(brand.address)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard-unavailable')
+      await navigator.clipboard.writeText(value)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 2000)
     } catch {
-      setCopied(false)
+      const ok = fallbackCopy(value)
+      setCopyState(ok ? 'copied' : 'error')
+      window.setTimeout(() => setCopyState('idle'), 3000)
     }
   }
 
@@ -27,8 +62,8 @@ export function Contact() {
       <div className="section-shell">
         <SectionHeading
           eyebrow="Location / 06"
-          title="Find the campus"
-          description="Biometric entry is live around the clock. Call ahead if you want a guide waiting at the turnstile for your session."
+          title="Visit or get in touch"
+          description="Find us in Hirekerur, Karnataka, or reach Chandan directly by phone, email or Instagram to plan your first session."
         />
 
         <div className="mt-12 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
@@ -40,12 +75,27 @@ export function Contact() {
               </p>
               <div className="mt-4 flex items-center gap-2 font-mono text-[0.625rem] uppercase tracking-[0.16em] text-dim">
                 <Radio className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-                Door telemetry reporting normal
+                {brand.venueLine}
               </div>
             </Card>
 
             <Card className="flex flex-col gap-3 p-6">
               <p className="label-telemetry">Quick actions</p>
+
+              <div className="flex items-center gap-3 rounded border border-hairline p-4">
+                <span
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent"
+                  aria-hidden="true"
+                >
+                  <UserRound className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="label-telemetry">Trainer / Contact</p>
+                  <p className="font-display text-sm font-semibold uppercase tracking-[0.06em] text-white">
+                    {trainer.name}
+                  </p>
+                </div>
+              </div>
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
                 <LinkButton
@@ -67,40 +117,78 @@ export function Contact() {
                   <Mail className="h-4 w-4" aria-hidden="true" />
                   {brand.emailDisplay}
                 </LinkButton>
+
+                <LinkButton
+                  href={social.instagram.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="secondary"
+                  size="md"
+                  className="justify-start"
+                >
+                  <Instagram className="h-4 w-4 text-accent" aria-hidden="true" />
+                  Follow Us on Instagram
+                </LinkButton>
               </div>
 
-              <div className="mt-2 flex items-start gap-3 rounded border border-hairline p-4">
+              <a
+                href={brand.mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open ${brand.address} in Google Maps`}
+                className="mt-2 flex items-start gap-3 rounded border border-hairline p-4 transition-colors hover:border-accent/50"
+              >
                 <MapPin
                   className="mt-0.5 h-4 w-4 shrink-0 text-accent"
                   aria-hidden="true"
                 />
-                <p className="flex-1 text-sm leading-relaxed text-muted">
+                <span className="flex-1 text-sm leading-relaxed text-muted underline-offset-4 transition-colors hover:text-white">
                   {brand.address}
-                </p>
-              </div>
+                </span>
+              </a>
 
-              <Button variant="ghost" onClick={copyAddress}>
-                {copied ? (
+              <Button
+                variant="ghost"
+                onClick={copyAddress}
+                aria-label="Copy gym address to clipboard"
+              >
+                {copyState === 'copied' ? (
                   <Check className="h-4 w-4 text-lime" aria-hidden="true" />
+                ) : copyState === 'error' ? (
+                  <AlertTriangle className="h-4 w-4 text-red-300" aria-hidden="true" />
                 ) : (
                   <Copy className="h-4 w-4" aria-hidden="true" />
                 )}
-                {copied ? 'Address copied' : 'Copy address'}
+                {copyState === 'copied'
+                  ? 'Address copied'
+                  : copyState === 'error'
+                    ? 'Copy failed'
+                    : 'Copy address'}
               </Button>
+
+              <p
+                role="status"
+                aria-live="polite"
+                className="min-h-[1rem] text-xs text-red-300"
+              >
+                {copyState === 'error'
+                  ? 'Copying was blocked by your browser. Select the address above and copy it manually.'
+                  : ''}
+              </p>
             </Card>
           </div>
 
-          {/* Google Maps Embed */}
+          {/* Google Maps Embed — full-colour, address-based */}
           <ScrollReveal direction="right" className="flex h-full flex-col gap-4">
-            <div className="relative flex-1 min-h-[22rem] w-full overflow-hidden rounded-lg border border-hairline bg-zinc-900">
+            <div className="relative min-h-[20rem] flex-1 w-full overflow-hidden rounded-lg border border-hairline bg-card sm:min-h-[24rem] lg:min-h-[26rem]">
               <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3153.835434509374!2d-122.4194155846816!3d37.77492957975903!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8085809c6c8f4459%3A0xb10ed6d9b5050f14!2sSan%20Francisco%2C%20CA!5e0!3m2!1sen!2sus!4v1611111111111!5m2!1sen!2sus"
-                className="absolute inset-0 h-full w-full opacity-80 mix-blend-luminosity invert grayscale contrast-125 hue-rotate-180"
+                src={brand.mapsEmbedUrl}
+                className="absolute inset-0 h-full w-full"
                 style={{ border: 0 }}
                 allowFullScreen
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
-                title="Google Maps Location"
+                title={`Google Maps — ${brand.address}`}
               />
             </div>
             <LinkButton

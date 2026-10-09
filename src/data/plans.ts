@@ -1,47 +1,56 @@
 import type { Plan } from '../types'
 
-export const ANNUAL_DISCOUNT = 0.2
-
+/**
+ * The four real REBORN FITNESS membership offers.
+ * All values are whole Indian Rupees (INR).
+ */
 export const plans: Plan[] = [
   {
-    id: 'day',
-    name: 'Reborn Day Pass',
-    monthlyPrice: 25,
-    blurb: 'One full day of unrestricted floor access plus a recovery session.',
+    id: 'monthly',
+    name: 'Monthly',
+    duration: '1 month',
+    regularPrice: 1000,
+    offerPrice: 1000,
     featured: false,
-    features: [
-      'Full facility access for the day',
-      'Locker and towel service included',
-      'One cryo or compression recovery session',
-      'Full telemetry dashboard access',
-    ],
+    blurb: 'Full access for a single month — a low-commitment way to start.',
+    features: ['1 month of full gym access', 'Start on any date'],
   },
   {
-    id: 'athlete',
-    name: 'Athlete Monthly',
-    monthlyPrice: 89,
-    blurb: 'The full biometric membership for consistent daily training.',
+    id: 'three-months',
+    name: '3 Months',
+    duration: '3 months',
+    regularPrice: 3000,
+    offerPrice: 2700,
+    saving: 300,
+    featured: false,
+    blurb: 'Three months of training with a discounted offer price.',
+    features: ['3 months of full gym access', 'Save ₹300 on the offer price'],
+  },
+  {
+    id: 'six-months',
+    name: '6 Months',
+    duration: '6 months',
+    regularPrice: 6000,
+    offerPrice: 5000,
+    saving: 1000,
     featured: true,
-    features: [
-      '24/7 biometric key tag entry',
-      'One guest pass every month',
-      'Cryo and sauna access included',
-      '1-on-1 monthly performance assessment',
-      'Full app metrics sync',
-    ],
+    blurb: 'Our most popular package — half a year of consistent training.',
+    features: ['6 months of full gym access', 'Save ₹1,000 on the offer price'],
   },
   {
-    id: 'elite',
-    name: 'Elite Performance',
-    monthlyPrice: 149,
-    blurb: 'Coached output and unlimited recovery for serious competitors.',
+    id: 'yearly',
+    name: '1 Year',
+    duration: '13 months total',
+    regularPrice: 12000,
+    offerPrice: 10000,
+    saving: 2000,
+    badge: '1 MONTH FREE',
     featured: false,
+    blurb: 'A full year plus one bonus month free — the best overall value.',
     features: [
-      'Everything in Athlete Monthly',
-      'Unlimited cryo and infrared sauna',
-      'Dedicated coach consultation monthly',
-      'Priority class booking',
-      'VIP locker and gear concierge',
+      '13 months of full gym access',
+      'Includes 1 bonus month free',
+      'Save ₹2,000 on the offer price',
     ],
   },
 ]

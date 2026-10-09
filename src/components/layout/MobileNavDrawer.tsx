@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import { X } from 'lucide-react'
-import { brand, navLinks } from '../../data/site'
+import { X, Instagram } from 'lucide-react'
+import { brand, navLinks, social } from '../../data/site'
 import { useScroll } from '../../context/ScrollContext'
 import { useScrollTo } from '../../hooks/useScrollTo'
 import { cn } from '../../lib/utils'
@@ -178,6 +178,15 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
             className="font-mono text-[0.75rem] uppercase tracking-[0.14em] text-muted transition-colors hover:text-accent"
           >
             {brand.emailDisplay}
+          </a>
+          <a
+            href={social.instagram.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 font-mono text-[0.75rem] uppercase tracking-[0.14em] text-muted transition-colors hover:text-accent"
+          >
+            <Instagram className="h-4 w-4" aria-hidden="true" />
+            Follow Us on Instagram
           </a>
         </div>
 

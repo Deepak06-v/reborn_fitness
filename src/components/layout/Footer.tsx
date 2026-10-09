@@ -1,12 +1,6 @@
-import { Instagram, Twitter, Youtube } from 'lucide-react'
-import { brand, navLinks } from '../../data/site'
+import { Instagram } from 'lucide-react'
+import { brand, navLinks, social, trainer } from '../../data/site'
 import { useScrollTo } from '../../hooks/useScrollTo'
-
-const socials = [
-  { label: 'Instagram', href: '#', Icon: Instagram },
-  { label: 'YouTube', href: '#', Icon: Youtube },
-  { label: 'X', href: '#', Icon: Twitter },
-]
 
 export function Footer() {
   const scrollTo = useScrollTo()
@@ -30,7 +24,7 @@ export function Footer() {
                   {brand.name}
                 </span>
                 <p className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent">
-                  Industrial Performance Campus
+                  {brand.venueLine}
                 </p>
               </div>
             </div>
@@ -59,6 +53,9 @@ export function Footer() {
           </nav>
 
           <div className="flex flex-col gap-3">
+            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.16em] text-dim">
+              Trainer / Contact · <span className="text-muted">{trainer.name}</span>
+            </p>
             <a
               href={brand.phoneHref}
               className="min-h-[44px] font-mono text-[0.6875rem] uppercase tracking-[0.16em] text-dim transition-colors hover:text-accent"
@@ -71,18 +68,15 @@ export function Footer() {
             >
               {brand.emailDisplay}
             </a>
-            <div className="mt-1 flex gap-2">
-              {socials.map(({ label, href, Icon }) => (
-                <a
-                  key={label}
-                  href={href}
-                  aria-label={label}
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-accent"
-                >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                </a>
-              ))}
-            </div>
+            <a
+              href={social.instagram.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex min-h-[44px] items-center gap-2 font-mono text-[0.6875rem] uppercase tracking-[0.16em] text-dim transition-colors hover:text-accent"
+            >
+              <Instagram className="h-4 w-4" aria-hidden="true" />
+              Follow Us on Instagram
+            </a>
           </div>
         </div>
 

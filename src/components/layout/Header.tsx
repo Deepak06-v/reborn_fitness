@@ -104,13 +104,6 @@ export function Header({ onOpenMenu }: HeaderProps) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-2 rounded-md border border-accent/30 bg-surface px-3 py-1.5 sm:inline-flex">
-            <span className="telemetry-dot" aria-hidden="true" />
-            <span className="font-mono text-[0.625rem] uppercase tracking-[0.16em] text-accent">
-              {brand.statusLabel}
-            </span>
-          </span>
-
           <button
             type="button"
             onClick={openCart}

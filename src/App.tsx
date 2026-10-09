@@ -6,7 +6,7 @@ import { MobileCtaBar } from './components/layout/MobileCtaBar'
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer'
 import { Coaches } from './components/sections/Coaches'
 import { Contact } from './components/sections/Contact'
-import { Faq } from './components/sections/Faq'
+import { GymTour } from './components/sections/GymTour'
 import { Hero } from './components/sections/Hero'
 import { Membership } from './components/sections/Membership'
 import { Merch } from './components/sections/Merch'
@@ -46,11 +46,11 @@ export default function App() {
         <Hero preloaderDone={preloaderDone} />
         <TrialPass requestedCoachId={requestedCoachId} />
         <Zones />
+        <GymTour />
         <Membership />
         <Merch />
         <Coaches onBookWithCoach={bookWithCoach} />
         <Contact />
-        <Faq />
       </main>
 
       <Footer />
