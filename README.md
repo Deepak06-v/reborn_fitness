@@ -36,7 +36,7 @@ reborn/
 │  └─ ...               # sections, ui, context, hooks
 ├─ server/              # admin API (independent package)
 │  ├─ src/{config,models,middleware,services,routes,validation,utils}
-│  ├─ scripts/create-admin.ts
+│  ├─ src/bootstrap/admin.ts   # automatic admin bootstrap on startup
 │  └─ tests/
 ├─ vite.config.ts       # dev proxy: /api -> http://localhost:4000
 └─ package.json
@@ -73,33 +73,30 @@ Fill in `server/.env` (see the file for descriptions):
 | `COOKIE_SECURE` | `true` behind HTTPS so cookies are `Secure` |
 | `SESSION_TTL_HOURS` | Session lifetime in hours |
 | `PORT` | API port (default `4000`) |
+| `ADMIN_USERNAME` | Admin login username (min 3 chars; required in production) |
+| `ADMIN_PASSWORD` | Admin login password (min 12 chars; required in production) |
 
 Never commit the real `.env` — only `.env.example` is tracked.
 
 ### Create the first admin
 
-There is **no public admin registration**. Bootstrap the first account either from
-environment variables (recommended, non-interactive) or with the CLI prompt.
-
-In `server/.env`:
+There is **no public admin registration**. The admin account is created
+automatically the first time the API starts with `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` set. Set them in `server/.env`:
 
 ```bash
 ADMIN_USERNAME=owner
 ADMIN_PASSWORD=choose-a-strong-password   # min 12 chars
-ADMIN_ROLE=superadmin                     # optional: admin | superadmin
-ADMIN_UPDATE=false                        # set true to reset an existing account
 ```
 
-Then run:
+The account is created with role `superadmin` and `active: true`, and the
+password is stored only as a bcrypt hash. Bootstrap is idempotent: on every
+later start the existing account is detected and **left unchanged**, so
+re-deploying never resets the password and never creates duplicates. In
+production both variables are required — the API refuses to start without them.
 
-```bash
-npm run seed:admin
-```
-
-Values may also be passed as flags, which override the environment:
-`--username <name>` `--password <pw>` `--role superadmin` `--update`. If neither the
-env vars nor flags are provided the script prompts (password hidden) when a terminal
-is attached. Credentials are never printed back to the console.
+Local development can run without them (bootstrap is skipped). Credentials are
+never printed to the console.
 
 ### Run in development
 
@@ -128,6 +125,17 @@ npm run start:server   # node server/dist/server.js
 
 Serve `dist/` behind a reverse proxy and route `/api/*` to the API (same origin),
 or host the API separately and set `CORS_ORIGINS` accordingly.
+
+The first start creates the admin account from `ADMIN_USERNAME`/`ADMIN_PASSWORD`
+(see [Create the first admin](#create-the-first-admin)); later starts leave it
+untouched. On a host such as **Render**, set `NODE_ENV=production`, `MONGODB_URI`,
+`SESSION_SECRET`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SESSION_TTL_HOURS`,
+`ADMIN_USERNAME` and `ADMIN_PASSWORD`, then build and start:
+
+```bash
+npm run build:server   # or: npm --prefix server run build
+npm run start:server   # or: npm --prefix server run start
+```
 
 ## Admin console
 
@@ -200,12 +208,11 @@ npm run build:server # compile the API to server/dist
 npm run start:server # run the compiled API
 npm run lint         # eslint, zero warnings tolerated
 npm run test:server  # run the API test suite
-npm run seed:admin   # create/update an admin account
 npm run preview      # serve dist/
 ```
 
 **server/** — `npm --prefix server run <script>`: `dev`, `build`, `start`,
-`typecheck`, `test`, `test:watch`, `create-admin`.
+`typecheck`, `test`, `test:watch`.
 
 ## Testing
 

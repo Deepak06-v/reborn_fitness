@@ -14,7 +14,6 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test:server": "npm --prefix server test",
-    "seed:admin": "npm --prefix server run create-admin",
     "install:all": "npm install && npm --prefix server install"
   },
   "dependencies": {
