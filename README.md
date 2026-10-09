@@ -128,9 +128,23 @@ or host the API separately and set `CORS_ORIGINS` accordingly.
 
 The first start creates the admin account from `ADMIN_USERNAME`/`ADMIN_PASSWORD`
 (see [Create the first admin](#create-the-first-admin)); later starts leave it
-untouched. On a host such as **Render**, set `NODE_ENV=production`, `MONGODB_URI`,
-`SESSION_SECRET`, `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SESSION_TTL_HOURS`,
-`ADMIN_USERNAME` and `ADMIN_PASSWORD`, then build and start:
+untouched.
+
+#### Deploying the API on Render
+
+The API is a self-contained package in `server/`, so point the service at that
+directory. `typescript` and the `@types/*` compiler dependencies live in
+`dependencies`, so a production install (`npm install --omit=dev`) can still
+build.
+
+- **Root Directory:** `server`
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm start`
+- **Environment:** `NODE_ENV=production`, `MONGODB_URI`, `SESSION_SECRET`,
+  `CORS_ORIGINS`, `COOKIE_SECURE=true`, `SESSION_TTL_HOURS`, `ADMIN_USERNAME`,
+  `ADMIN_PASSWORD`
+
+From the repository root, the equivalent is:
 
 ```bash
 npm run build:server   # or: npm --prefix server run build
