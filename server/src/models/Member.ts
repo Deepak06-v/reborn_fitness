@@ -12,6 +12,15 @@ export interface MemberDoc extends Document<Types.ObjectId> {
   address: string | null
   notes: string | null
   membershipType: string | null
+  /** Selected plan id (catalogue key); null only for legacy, pre-plan members. */
+  planId: string | null
+  /** Plan name snapshotted from the catalogue at selection time. */
+  planName: string | null
+  planDurationMonths: number | null
+  /** Price of one billing period at selection time, in integer paise. */
+  planPricePaise: number | null
+  /** First day of the current/next billing period; null when not scheduled. */
+  nextBillingDate: Date | null
   joiningDate: Date
   monthlyFeePaise: number
   status: MemberStatus
@@ -32,6 +41,11 @@ const memberSchema = new Schema<MemberDoc, MemberModel>(
     address: { type: String, default: null, trim: true, maxlength: 300 },
     notes: { type: String, default: null, trim: true, maxlength: 2000 },
     membershipType: { type: String, default: null, trim: true, maxlength: 60 },
+    planId: { type: String, default: null, trim: true },
+    planName: { type: String, default: null, trim: true, maxlength: 60 },
+    planDurationMonths: { type: Number, default: null, min: 1 },
+    planPricePaise: { type: Number, default: null, min: 0 },
+    nextBillingDate: { type: Date, default: null },
     joiningDate: { type: Date, required: true },
     monthlyFeePaise: {
       type: Number,

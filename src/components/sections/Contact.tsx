@@ -66,7 +66,7 @@ export function Contact() {
           description="Find us in Hirekerur, Karnataka, or reach Chandan directly by phone, email or Instagram to plan your first session."
         />
 
-        <div className="mt-12 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="flex flex-col gap-5">
             <Card interactive className="p-6">
               <p className="flex items-center gap-2.5 font-mono text-[0.6875rem] uppercase tracking-[0.16em] text-lime">
@@ -97,25 +97,29 @@ export function Contact() {
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
                 <LinkButton
                   href={brand.phoneHref}
                   variant="secondary"
                   size="md"
-                  className="justify-start"
+                  className="min-w-0 justify-start gap-2.5 text-left"
                 >
-                  <Phone className="h-4 w-4" aria-hidden="true" />
-                  {brand.phoneDisplay}
+                  <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 break-words">
+                    {brand.phoneDisplay}
+                  </span>
                 </LinkButton>
 
                 <LinkButton
                   href={brand.emailHref}
                   variant="secondary"
                   size="md"
-                  className="justify-start"
+                  className="min-w-0 justify-start gap-2.5 text-left"
                 >
-                  <Mail className="h-4 w-4" aria-hidden="true" />
-                  {brand.emailDisplay}
+                  <Mail className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 break-words">
+                    {brand.emailDisplay}
+                  </span>
                 </LinkButton>
 
                 <LinkButton
@@ -124,10 +128,12 @@ export function Contact() {
                   rel="noopener noreferrer"
                   variant="secondary"
                   size="md"
-                  className="justify-start"
+                  className="min-w-0 justify-start gap-2.5 text-left"
                 >
-                  <Instagram className="h-4 w-4 text-accent" aria-hidden="true" />
-                  Follow Us on Instagram
+                  <Instagram className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 break-words">
+                    Follow Us on Instagram
+                  </span>
                 </LinkButton>
               </div>
 
@@ -179,7 +185,7 @@ export function Contact() {
           </div>
 
           {/* Google Maps Embed — full-colour, address-based */}
-          <ScrollReveal direction="right" className="flex h-full flex-col gap-4">
+          <ScrollReveal direction="rise" className="flex h-full flex-col gap-4">
             <div className="relative min-h-[20rem] flex-1 w-full overflow-hidden rounded-lg border border-hairline bg-card sm:min-h-[24rem] lg:min-h-[26rem]">
               <iframe
                 src={brand.mapsEmbedUrl}

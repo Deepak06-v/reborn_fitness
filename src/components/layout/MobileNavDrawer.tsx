@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import { X, Instagram } from 'lucide-react'
-import { brand, navLinks, social } from '../../data/site'
+import { X, Instagram, ArrowRight } from 'lucide-react'
+import { brand, consultation, navLinks, social } from '../../data/site'
+import { LinkButton } from '../ui/Button'
 import { useScroll } from '../../context/ScrollContext'
 import { useScrollTo } from '../../hooks/useScrollTo'
 import { cn } from '../../lib/utils'
@@ -108,7 +109,7 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
       <div
         ref={panelRef}
         className={cn(
-          'absolute inset-y-0 left-0 flex w-[86%] max-w-sm flex-col',
+          'absolute inset-y-0 left-0 flex w-[86%] max-w-sm flex-col overflow-y-auto',
           'border-r border-accent/20 bg-surface/95 p-6 backdrop-blur-[16px]',
         )}
       >
@@ -163,6 +164,19 @@ export function MobileNavDrawer({ open, onClose }: MobileNavDrawerProps) {
             </a>
           ))}
         </nav>
+
+        <LinkButton
+          href={consultation.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="lime"
+          size="lg"
+          fullWidth
+          className="mt-6"
+        >
+          {consultation.label}
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </LinkButton>
 
         <div className="rule my-6" />
 

@@ -14,6 +14,7 @@ import authRouter from './routes/auth'
 import membersRouter from './routes/members'
 import paymentsRouter from './routes/payments'
 import dashboardRouter from './routes/dashboard'
+import plansRouter from './routes/plans'
 
 export function createApp() {
   const app = express()
@@ -72,6 +73,7 @@ export function createApp() {
   app.use('/api/admin/members', requireAdmin, membersRouter)
   app.use('/api/admin/payments', requireAdmin, paymentsRouter)
   app.use('/api/admin/dashboard', requireAdmin, dashboardRouter)
+  app.use('/api/admin/plans', requireAdmin, plansRouter)
 
   app.use(notFoundHandler)
   app.use(errorHandler)

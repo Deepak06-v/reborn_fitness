@@ -8,6 +8,7 @@ import type {
   Payment,
   PaymentDetailResponse,
   PaymentListResponse,
+  Plan,
 } from './types'
 
 export const CSRF_COOKIE = 'reborn.csrf'
@@ -141,6 +142,12 @@ export const adminApi = {
 
   dashboard(month?: string): Promise<DashboardResponse> {
     return request<DashboardResponse>('/dashboard', { query: { month } })
+  },
+
+  plans: {
+    list(): Promise<Plan[]> {
+      return request<{ plans: Plan[] }>('/plans').then((data) => data.plans)
+    },
   },
 
   members: {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { Printer, RotateCcw } from 'lucide-react'
 import { adminApi } from '../api'
 import {
   formatDate,
@@ -10,9 +10,56 @@ import {
   rupeesToPaise,
   todayInputValue,
 } from '../format'
-import type { PaymentDetailResponse, PaymentMethod } from '../types'
-import { AdminModal, Spinner, StatusBadge } from './ui'
+import type { Member, Payment, PaymentDetailResponse, PaymentMethod } from '../types'
+import { AdminModal, DueBadge, Spinner } from './ui'
 import { useToast } from './useToast'
+
+/** Opens a print-friendly bill in a new window (no PDF library needed). */
+function printBill(payment: Payment, member: Member | null) {
+  const rows = payment.paymentEntries
+    .map(
+      (entry) => `<tr class="${entry.voided ? 'void' : ''}">
+        <td>${formatDate(entry.paymentDate)}</td>
+        <td>${entry.method.replace('_', ' ')}</td>
+        <td>${entry.referenceNumber ?? '—'}</td>
+        <td class="right">${formatPaise(entry.amountPaise)}${entry.voided ? ' (void)' : ''}</td>
+      </tr>`,
+    )
+    .join('')
+  const html = `<!doctype html><html><head><meta charset="utf-8" />
+    <title>${payment.invoiceNumber ?? 'Bill'}</title>
+    <style>
+      * { font-family: Arial, Helvetica, sans-serif; }
+      body { margin: 32px; color: #111; }
+      h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: 1px; }
+      .muted { color: #555; font-size: 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+      th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { text-transform: uppercase; font-size: 10px; letter-spacing: 1px; color: #666; }
+      .right { text-align: right; }
+      .void td { color: #999; text-decoration: line-through; }
+      .totals { margin-top: 16px; font-size: 14px; }
+      .totals div { display: flex; justify-content: space-between; max-width: 280px; padding: 3px 0; }
+      .totals .strong { font-weight: bold; border-top: 1px solid #111; margin-top: 4px; padding-top: 6px; }
+    </style></head><body>
+    <h1>REBORN FITNESS · ${payment.invoiceNumber ?? 'Bill'}</h1>
+    <p class="muted">${member ? `${member.fullName} · ${member.memberId} · ${member.phone}` : payment.memberId}</p>
+    <p class="muted">Plan: ${payment.planName ?? '—'}${payment.durationMonths ? ` · ${payment.durationMonths} months` : ''}</p>
+    <p class="muted">Period: ${payment.periodStart ? formatDate(payment.periodStart) : '—'} – ${payment.periodEnd ? formatDate(payment.periodEnd) : '—'} · Due ${formatDate(payment.dueDate)}</p>
+    <div class="totals">
+      <div><span>Amount due</span><span>${formatPaise(payment.dueAmountPaise)}</span></div>
+      <div><span>Amount paid</span><span>${formatPaise(payment.amountPaidPaise)}</span></div>
+      <div class="strong"><span>Balance</span><span>${formatPaise(payment.balancePaise)}</span></div>
+    </div>
+    ${rows ? `<table><thead><tr><th>Date</th><th>Method</th><th>Reference</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+    <p class="muted" style="margin-top:24px">Generated ${formatDate(new Date().toISOString())}</p>
+    <script>window.onload = function(){ window.print() }</script>
+    </body></html>`
+  const win = window.open('', '_blank', 'width=800,height=900')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+}
 
 const methodOptions: { value: PaymentMethod; label: string }[] = [
   { value: 'cash', label: 'Cash' },
@@ -180,6 +227,31 @@ export function PaymentDetailModal({
         </p>
       ) : payment ? (
         <div className="space-y-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-display text-base font-bold tracking-tight text-white">
+                {payment.invoiceNumber ?? 'Billing record'}
+              </p>
+              <p className="font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-dim">
+                {payment.planName ?? 'Plan'}
+                {payment.durationMonths ? ` · ${payment.durationMonths} months` : ''}
+              </p>
+              {payment.periodStart && payment.periodEnd ? (
+                <p className="font-mono text-[0.6875rem] text-dim">
+                  {formatDate(payment.periodStart)} – {formatDate(payment.periodEnd)}
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => printBill(payment, detail?.member ?? null)}
+              className="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
+            >
+              <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+              Print bill
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <SummaryCell label="Due" value={formatPaise(payment.dueAmountPaise)} />
             <SummaryCell label="Paid" value={formatPaise(payment.amountPaidPaise)} />
@@ -191,7 +263,7 @@ export function PaymentDetailModal({
             <div className="rounded-md border border-hairline bg-canvas p-3">
               <p className="label-telemetry">Status</p>
               <div className="mt-2">
-                <StatusBadge status={payment.status} />
+                <DueBadge state={payment.dueState} />
               </div>
             </div>
           </div>

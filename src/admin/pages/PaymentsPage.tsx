@@ -7,18 +7,20 @@ import type { PaymentListResponse } from '../types'
 import { PaymentDetailModal } from '../components/PaymentDetailModal'
 import {
   AdminModal,
+  DueBadge,
   EmptyState,
   PageHeader,
   Panel,
   Spinner,
   StatCard,
-  StatusBadge,
 } from '../components/ui'
 import { useToast } from '../components/useToast'
 
 const statusFilters = [
   { value: '', label: 'All statuses' },
   { value: 'paid', label: 'Paid' },
+  { value: 'upcoming', label: 'Upcoming (not due)' },
+  { value: 'due_soon', label: 'Due soon' },
   { value: 'partial', label: 'Partial' },
   { value: 'unpaid', label: 'Unpaid' },
   { value: 'overdue', label: 'Overdue' },
@@ -239,6 +241,12 @@ export function PaymentsPage() {
                         {payment.memberRef}
                         {payment.phone ? ` · ${payment.phone}` : ''}
                       </p>
+                      {payment.invoiceNumber ? (
+                        <p className="font-mono text-[0.625rem] text-dim">
+                          {payment.invoiceNumber}
+                          {payment.planName ? ` · ${payment.planName}` : ''}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 font-body text-sm text-muted">
                       {formatPaise(payment.dueAmountPaise)}
@@ -253,7 +261,7 @@ export function PaymentsPage() {
                       {formatDate(payment.dueDate)}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={payment.status} />
+                      <DueBadge state={payment.dueState} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
@@ -308,7 +316,7 @@ export function PaymentsPage() {
         open={generateOpen}
         onClose={() => setGenerateOpen(false)}
         title={`Generate dues · ${formatMonth(month)}`}
-        description="Creates one bill per active member (no proration). Existing bills are never overwritten."
+        description="Creates the next bill for each active member from their plan period (no proration). Existing bills are never overwritten or duplicated."
       >
         <div className="space-y-4">
           <div>

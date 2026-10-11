@@ -1,10 +1,41 @@
 import { useEffect, useState } from 'react'
-import { Activity, Radio, Snowflake, Waves } from 'lucide-react'
-import { brand } from '../../data/site'
+import { Activity, Instagram, MapPin, Phone, Radio, Snowflake, Waves } from 'lucide-react'
+import { brand, social } from '../../data/site'
 import { useScrollTo } from '../../hooks/useScrollTo'
 import { LinkButton } from '../ui/Button'
 import { StaggerText } from '../animations/StaggerText'
 import { ScrollReveal } from '../animations/ScrollReveal'
+import { cn } from '../../lib/utils'
+
+/**
+ * Quick-contact actions shown under the hero's "See Inside the Gym" button.
+ * Instagram and Maps open in a new tab; Call uses the `tel:` protocol so mobile
+ * devices launch the native dialler. All targets come from the site config —
+ * nothing is hardcoded here.
+ */
+const quickContacts = [
+  {
+    href: social.instagram.url,
+    label: 'Instagram',
+    ariaLabel: 'Instagram',
+    icon: Instagram,
+    external: true,
+  },
+  {
+    href: brand.phoneHref,
+    label: 'Call',
+    ariaLabel: 'Call the gym',
+    icon: Phone,
+    external: false,
+  },
+  {
+    href: brand.mapsUrl,
+    label: 'Maps',
+    ariaLabel: 'Open location in Google Maps',
+    icon: MapPin,
+    external: true,
+  },
+] as const
 
 const liveStats = [
   { id: 'occ', label: 'Live occupancy', icon: Activity, unit: '%' },
@@ -141,6 +172,32 @@ export function Hero({ preloaderDone = true }: HeroProps) {
             >
               See Inside the Gym
             </LinkButton>
+          </ScrollReveal>
+
+          <ScrollReveal direction="rise" delay={0.2}>
+            <ul className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              {quickContacts.map((contact) => (
+                <li key={contact.label}>
+                  <a
+                    href={contact.href}
+                    aria-label={contact.ariaLabel}
+                    {...(contact.external
+                      ? { target: '_blank', rel: 'noopener noreferrer' }
+                      : {})}
+                    className={cn(
+                      'group inline-flex min-h-[44px] items-center gap-2 rounded-md border border-hairline bg-surface px-3.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors',
+                      'hover:border-accent hover:text-white focus-visible:border-accent active:bg-accent/10',
+                    )}
+                  >
+                    <contact.icon
+                      className="h-4 w-4 text-accent transition-colors group-hover:text-accent"
+                      aria-hidden="true"
+                    />
+                    {contact.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           </ScrollReveal>
         </div>
       </div>

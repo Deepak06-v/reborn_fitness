@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { plans } from '../../data/plans'
 import { adminApi } from '../api'
-import { paiseToRupeeInput, rupeesToPaise, todayInputValue } from '../format'
+import { formatINR, todayInputValue } from '../format'
 import type { Member } from '../types'
 import { AdminModal, Spinner } from './ui'
 import { useToast } from './useToast'
@@ -26,8 +27,8 @@ export function MemberFormModal({
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [membershipType, setMembershipType] = useState('')
+  const [planId, setPlanId] = useState('')
   const [joiningDate, setJoiningDate] = useState(todayInputValue())
-  const [monthlyFee, setMonthlyFee] = useState('')
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -41,8 +42,8 @@ export function MemberFormModal({
       setPhone(member.phone)
       setEmail(member.email ?? '')
       setMembershipType(member.membershipType ?? '')
+      setPlanId(member.planId ?? '')
       setJoiningDate(member.joiningDate.slice(0, 10))
-      setMonthlyFee(paiseToRupeeInput(member.monthlyFeePaise))
       setAddress(member.address ?? '')
       setNotes(member.notes ?? '')
     } else {
@@ -50,27 +51,36 @@ export function MemberFormModal({
       setPhone('')
       setEmail('')
       setMembershipType('')
+      setPlanId('')
       setJoiningDate(todayInputValue())
-      setMonthlyFee('')
       setAddress('')
       setNotes('')
     }
   }, [open, member])
 
+  const selectedPlan = plans.find((plan) => plan.id === planId) ?? null
+
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
-    const payload = {
+    if (!member && !planId) {
+      setError('Select a membership plan')
+      setSubmitting(false)
+      return
+    }
+    const payload: Record<string, unknown> = {
       fullName: fullName.trim(),
       phone: phone.trim(),
       email: email.trim() || null,
       membershipType: membershipType.trim() || null,
       joiningDate,
-      monthlyFeePaise: rupeesToPaise(monthlyFee),
       address: address.trim() || null,
       notes: notes.trim() || null,
     }
+    // The server derives the fee from the plan; only an explicit, non-empty
+    // selection is sent (blank preserves a legacy member's plan on edit).
+    if (planId) payload.planId = planId
     try {
       const saved = member
         ? await adminApi.members.update(member.id, payload)
@@ -138,15 +148,27 @@ export function MemberFormModal({
             />
           </div>
           <div>
-            <label className="label-telemetry mb-1.5 block">Monthly fee (₹)</label>
-            <input
-              required
-              inputMode="decimal"
-              value={monthlyFee}
-              onChange={(event) => setMonthlyFee(event.target.value)}
-              placeholder="1500"
+            <label className="label-telemetry mb-1.5 block">Membership plan</label>
+            <select
+              required={!member}
+              value={planId}
+              onChange={(event) => setPlanId(event.target.value)}
               className={inputClass}
-            />
+            >
+              <option value="" disabled>
+                Select a plan
+              </option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name} · {formatINR(plan.offerPrice)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-dim">
+              {selectedPlan
+                ? `${selectedPlan.duration} · ${formatINR(selectedPlan.offerPrice)}`
+                : 'Price and duration come from the selected plan'}
+            </p>
           </div>
           <div>
             <label className="label-telemetry mb-1.5 block">Membership type (optional)</label>

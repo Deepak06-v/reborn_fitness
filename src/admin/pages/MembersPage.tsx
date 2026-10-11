@@ -6,18 +6,20 @@ import { currentMonthValue, formatDate, formatPaise } from '../format'
 import type { Member, MemberListResponse } from '../types'
 import { MemberFormModal } from '../components/MemberFormModal'
 import {
+  DueBadge,
   EmptyState,
   MemberStatusBadge,
   PageHeader,
   Panel,
   Spinner,
-  StatusBadge,
 } from '../components/ui'
 import { useToast } from '../components/useToast'
 
 const statusFilters: { value: string; label: string }[] = [
   { value: '', label: 'All payment states' },
   { value: 'paid', label: 'Paid' },
+  { value: 'upcoming', label: 'Upcoming (not due)' },
+  { value: 'due_soon', label: 'Due soon' },
   { value: 'partial', label: 'Partial' },
   { value: 'unpaid', label: 'Unpaid' },
   { value: 'overdue', label: 'Overdue' },
@@ -250,7 +252,7 @@ export function MembersPage() {
                     <td className="px-4 py-3">
                       {member.currentMonthPayment ? (
                         <div className="flex flex-col gap-1">
-                          <StatusBadge status={member.currentMonthPayment.status} />
+                          <DueBadge state={member.currentMonthPayment.dueState} />
                           {member.currentMonthPayment.balancePaise > 0 ? (
                             <span className="font-mono text-[0.625rem] text-dim">
                               {formatPaise(member.currentMonthPayment.balancePaise)} due

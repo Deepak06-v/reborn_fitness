@@ -1,18 +1,26 @@
 import { Types, type FilterQuery, type SortOrder } from 'mongoose'
 import { Member, type MemberDoc } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
+import { getPlan } from '../config/plans'
 import { ApiError } from '../utils/errors'
-import { currentMonth } from '../utils/month'
-import { deriveStatus, outstandingBalance, type PaymentStatus } from '../utils/paymentStatus'
+import { addMonthsClamped, currentMonth } from '../utils/month'
+import {
+  deriveDueState,
+  deriveStatus,
+  outstandingBalance,
+  type PaymentFilterStatus,
+} from '../utils/paymentStatus'
 import { isValidPhone, normalizePhone } from '../utils/phone'
 import { escapeRegex, paymentStatusExpr } from '../utils/query'
+import { createInitialPeriod } from './billing'
 import { serializeMember, serializePayment } from './serializers'
 
 export interface MemberInput {
   fullName: string
   phone: string
   joiningDate: Date
-  monthlyFeePaise: number
+  planId: string
+  monthlyFeePaise?: number
   email?: string | null
   address?: string | null
   notes?: string | null
@@ -22,7 +30,7 @@ export interface MemberInput {
 export interface ListMembersParams {
   search?: string
   status?: 'active' | 'inactive'
-  paymentStatus?: PaymentStatus
+  paymentStatus?: PaymentFilterStatus
   month?: string
   sort?: string
   page: number
@@ -58,19 +66,45 @@ export async function createMember(input: MemberInput): Promise<MemberDoc> {
     ])
   }
 
+  const plan = getPlan(input.planId)
+  if (!plan) {
+    throw ApiError.unprocessable('A valid membership plan is required', [
+      { path: 'planId', message: 'Select a membership plan' },
+    ])
+  }
+
   const memberId = await Member.generateMemberId()
-  return Member.create({
+  const member = await Member.create({
     memberId,
     fullName: input.fullName.trim(),
     phone,
     email: input.email?.trim() || null,
     address: input.address?.trim() || null,
     notes: input.notes?.trim() || null,
-    membershipType: input.membershipType?.trim() || null,
+    membershipType: input.membershipType?.trim() || plan.name,
+    planId: plan.id,
+    planName: plan.name,
+    planDurationMonths: plan.durationMonths,
+    planPricePaise: plan.pricePaise,
     joiningDate: input.joiningDate,
-    monthlyFeePaise: input.monthlyFeePaise,
+    // The plan catalogue is authoritative: the client-supplied fee is ignored.
+    monthlyFeePaise: plan.pricePaise,
     status: 'active',
   })
+
+  try {
+    const period = await createInitialPeriod(member)
+    member.nextBillingDate =
+      period.periodEnd ?? addMonthsClamped(member.joiningDate, plan.durationMonths)
+    await member.save()
+  } catch (error) {
+    // Compensate: a member without a first bill would be in an inconsistent
+    // state, so roll back the member record if period creation fails.
+    await Member.deleteOne({ _id: member._id }).catch(() => undefined)
+    throw error
+  }
+
+  return member
 }
 
 export async function updateMember(
@@ -94,11 +128,30 @@ export async function updateMember(
   if (patch.email !== undefined) member.email = patch.email?.trim() || null
   if (patch.address !== undefined) member.address = patch.address?.trim() || null
   if (patch.notes !== undefined) member.notes = patch.notes?.trim() || null
+  if (patch.planId !== undefined) {
+    const plan = getPlan(patch.planId)
+    if (!plan) {
+      throw ApiError.unprocessable('A valid membership plan is required', [
+        { path: 'planId', message: 'Select a membership plan' },
+      ])
+    }
+    member.planId = plan.id
+    member.planName = plan.name
+    member.planDurationMonths = plan.durationMonths
+    member.planPricePaise = plan.pricePaise
+    member.monthlyFeePaise = plan.pricePaise
+    // Keep the legacy label aligned unless the caller set it explicitly.
+    if (patch.membershipType === undefined) member.membershipType = plan.name
+  }
   if (patch.membershipType !== undefined) {
     member.membershipType = patch.membershipType?.trim() || null
   }
   if (patch.joiningDate !== undefined) member.joiningDate = patch.joiningDate
-  if (patch.monthlyFeePaise !== undefined) member.monthlyFeePaise = patch.monthlyFeePaise
+  // The plan catalogue is authoritative for members on a plan; a raw fee is
+  // only honoured for legacy records that predate plans.
+  if (patch.monthlyFeePaise !== undefined && patch.planId === undefined && !member.planId) {
+    member.monthlyFeePaise = patch.monthlyFeePaise
+  }
   if (patch.status !== undefined) member.status = patch.status
 
   await member.save()
@@ -183,6 +236,10 @@ export async function listMembers(params: ListMembersParams) {
       currentMonthPayment: payment
         ? {
             id: payment._id.toString(),
+            invoiceNumber: payment.invoiceNumber,
+            planName: payment.planName,
+            periodStart: payment.periodStart ? payment.periodStart.toISOString() : null,
+            periodEnd: payment.periodEnd ? payment.periodEnd.toISOString() : null,
             dueAmountPaise: payment.dueAmountPaise,
             amountPaidPaise: payment.amountPaidPaise,
             balancePaise: outstandingBalance(
@@ -191,6 +248,11 @@ export async function listMembers(params: ListMembersParams) {
             ),
             dueDate: payment.dueDate.toISOString(),
             status: deriveStatus(
+              payment.dueAmountPaise,
+              payment.amountPaidPaise,
+              payment.dueDate,
+            ),
+            dueState: deriveDueState(
               payment.dueAmountPaise,
               payment.amountPaidPaise,
               payment.dueDate,
@@ -214,6 +276,7 @@ export async function listMembers(params: ListMembersParams) {
 export async function getMemberDetail(id: string) {
   const member = await getMemberOrThrow(id)
   const payments = await MonthlyPayment.find({ member: member._id }).sort({
+    periodStart: -1,
     billingMonth: -1,
   })
 

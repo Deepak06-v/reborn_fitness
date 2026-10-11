@@ -7,6 +7,26 @@ import { hashPassword } from '../../src/utils/password'
 
 export const TEST_ADMIN = { username: 'owner', password: 'super-secret-pass-123' }
 
+/** The IST calendar day (YYYY-MM-DD) `offset` days from today. */
+export function istDay(offset = 0): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(Date.now() + offset * 86_400_000))
+}
+
+/** The IST calendar day (YYYY-MM-DD) an ISO timestamp falls on. */
+export function istDayOf(value: string | Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
+
 export async function createAdmin(
   username = TEST_ADMIN.username,
   password = TEST_ADMIN.password,

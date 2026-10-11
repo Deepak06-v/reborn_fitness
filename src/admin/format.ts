@@ -1,4 +1,4 @@
-import type { PaymentStatus } from './types'
+import type { DueState, PaymentStatus } from './types'
 
 const inr = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -83,6 +83,24 @@ export const paymentStatusLabel: Record<PaymentStatus, string> = {
   paid: 'Paid',
   partial: 'Partial',
   unpaid: 'Unpaid',
+  overdue: 'Overdue',
+}
+
+/**
+ * Colour-coded due state for a single bill:
+ * green = paid, yellow = upcoming (not yet due), red = due soon / overdue.
+ */
+export const dueStateTone: Record<DueState, 'lime' | 'accent' | 'danger'> = {
+  paid: 'lime',
+  upcoming: 'accent',
+  due_soon: 'danger',
+  overdue: 'danger',
+}
+
+export const dueStateLabel: Record<DueState, string> = {
+  paid: 'Paid',
+  upcoming: 'Upcoming',
+  due_soon: 'Due soon',
   overdue: 'Overdue',
 }
 

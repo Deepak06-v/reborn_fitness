@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type Lenis from 'lenis'
-import { Menu } from 'lucide-react'
+import { ArrowRight, Menu } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { brand, navLinks } from '../../data/site'
+import { brand, consultation, navLinks } from '../../data/site'
+import { LinkButton } from '../ui/Button'
 import { useScroll } from '../../context/ScrollContext'
 import { useScrollTo } from '../../hooks/useScrollTo'
 
@@ -101,6 +102,18 @@ export function Header({ onOpenMenu }: HeaderProps) {
         </nav>
 
         <div className="flex items-center gap-2">
+          <LinkButton
+            href={consultation.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="lime"
+            size="sm"
+            className="hidden lg:inline-flex"
+          >
+            Free Consultation
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </LinkButton>
+
           <button
             type="button"
             onClick={onOpenMenu}

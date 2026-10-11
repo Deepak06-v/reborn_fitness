@@ -130,13 +130,13 @@
   }
 
   /*
-   * "Inside Reborn Fitness" gallery marquee.
+   * Endless image marquees (gym interior + transformations).
    * Autoplay is paused on hover (fine pointers only) and whenever the track
-   * carries `.is-paused` (user pause, touch interaction). Reduced-motion users
-   * get no animation at all and use the native horizontal scroller instead.
+   * carries `.is-paused` (user toggle). Reduced-motion users get no animation
+   * at all and use the native horizontal scroller instead.
    */
   @media (hover: hover) and (pointer: fine) {
-    .gallery-row:hover .marquee-track {
+    .marquee-frame:hover .marquee-track {
       animation-play-state: paused;
     }
   }

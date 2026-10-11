@@ -1,5 +1,15 @@
 import { z } from 'zod'
+import { PLAN_IDS } from '../config/plans'
 import { isValidMonth } from '../utils/month'
+
+const paymentStatusValues = [
+  'paid',
+  'unpaid',
+  'partial',
+  'overdue',
+  'upcoming',
+  'due_soon',
+] as const
 
 const optionalText = (max: number) =>
   z
@@ -16,10 +26,12 @@ export const createMemberSchema = z.object({
   fullName: z.string().trim().min(1, 'Full name is required').max(120),
   phone: z.string().trim().min(1, 'Phone number is required'),
   joiningDate: z.coerce.date({ errorMap: () => ({ message: 'Joining date is required' }) }),
-  monthlyFeePaise: z.coerce
-    .number()
-    .int('Monthly fee must be a whole number of paise')
-    .min(0),
+  // A membership plan is mandatory. The server derives the price from the
+  // catalogue, so any client-supplied fee is ignored.
+  planId: z.enum(PLAN_IDS, {
+    errorMap: () => ({ message: 'Select a membership plan' }),
+  }),
+  monthlyFeePaise: z.coerce.number().int().min(0).optional(),
   email: optionalEmail,
   address: optionalText(300),
   notes: optionalText(2000),
@@ -31,6 +43,7 @@ export const updateMemberSchema = z
     fullName: z.string().trim().min(1).max(120).optional(),
     phone: z.string().trim().min(1).optional(),
     joiningDate: z.coerce.date().optional(),
+    planId: z.enum(PLAN_IDS).optional(),
     monthlyFeePaise: z.coerce.number().int().min(0).optional(),
     email: optionalEmail,
     address: optionalText(300),
@@ -45,7 +58,7 @@ export const updateMemberSchema = z
 export const listMembersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   status: z.enum(['active', 'inactive']).optional(),
-  paymentStatus: z.enum(['paid', 'unpaid', 'partial', 'overdue']).optional(),
+  paymentStatus: z.enum(paymentStatusValues).optional(),
   month: z.string().refine(isValidMonth, 'Month must be in YYYY-MM format').optional(),
   sort: z.string().trim().max(40).optional(),
   page: z.coerce.number().int().min(1).default(1),

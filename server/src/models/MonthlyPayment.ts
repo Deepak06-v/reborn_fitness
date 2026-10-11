@@ -22,7 +22,23 @@ export interface MonthlyPaymentDoc extends Document<Types.ObjectId> {
   _id: Types.ObjectId
   member: Types.ObjectId
   memberId: string
+  /**
+   * IST month (YYYY-MM) in which this billing period starts. Kept as the
+   * listing/dashboard key and the duplicate-bill guard (one bill per member
+   * per start month).
+   */
   billingMonth: string
+  /** Human-facing unique invoice reference, e.g. RBF-INV-0001. */
+  invoiceNumber: string | null
+  /** Plan snapshotted at issue time; null for legacy monthly records. */
+  planId: string | null
+  planName: string | null
+  durationMonths: number | null
+  planPricePaise: number | null
+  /** Inclusive first day of the billing period. */
+  periodStart: Date | null
+  /** Exclusive end of the billing period (start + duration, day-clamped). */
+  periodEnd: Date | null
   dueAmountPaise: number
   amountPaidPaise: number
   dueDate: Date
@@ -66,6 +82,13 @@ const monthlyPaymentSchema = new Schema<MonthlyPaymentDoc>(
     member: { type: Schema.Types.ObjectId, ref: 'Member', required: true, index: true },
     memberId: { type: String, required: true, index: true },
     billingMonth: { type: String, required: true },
+    invoiceNumber: { type: String, default: null, trim: true },
+    planId: { type: String, default: null, trim: true },
+    planName: { type: String, default: null, trim: true, maxlength: 60 },
+    durationMonths: { type: Number, default: null, min: 1 },
+    planPricePaise: { type: Number, default: null, min: 0 },
+    periodStart: { type: Date, default: null },
+    periodEnd: { type: Date, default: null },
     dueAmountPaise: {
       type: Number,
       required: true,
@@ -87,6 +110,8 @@ const monthlyPaymentSchema = new Schema<MonthlyPaymentDoc>(
 monthlyPaymentSchema.index({ member: 1, billingMonth: 1 }, { unique: true })
 monthlyPaymentSchema.index({ billingMonth: 1, status: 1 })
 monthlyPaymentSchema.index({ dueDate: 1 })
+// Invoice numbers must be unique; sparse so legacy rows without one are exempt.
+monthlyPaymentSchema.index({ invoiceNumber: 1 }, { unique: true, sparse: true })
 
 export const MonthlyPayment =
   (models.MonthlyPayment as Model<MonthlyPaymentDoc>) ??

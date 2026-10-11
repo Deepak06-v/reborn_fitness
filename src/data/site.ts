@@ -28,6 +28,16 @@ export const brand = {
   hoursLabel: 'OPEN NOW — 24/7 ACCESS',
 } as const
 
+/**
+ * The site's primary conversion action. Consultation is handled entirely by an
+ * external Google Forms responder link — there is no backend or custom form.
+ */
+export const consultation = {
+  label: 'Book Your Free Consultation',
+  microcopy: 'Start your fitness journey with a free consultation.',
+  url: 'https://docs.google.com/forms/d/e/1FAIpQLSf5smvwwt0vaWPdyVkrsWwP5WulREMaxzDeEI8FOzrICunkPQ/viewform',
+} as const
+
 /** The real trainer / point of contact for the gym. */
 export const trainer = {
   name: 'Chandan',

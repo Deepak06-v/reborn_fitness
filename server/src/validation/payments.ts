@@ -6,7 +6,9 @@ export const paymentMethods = ['cash', 'upi', 'bank_transfer', 'card', 'other'] 
 export const listPaymentsQuerySchema = z.object({
   month: z.string().refine(isValidMonth, 'Month must be in YYYY-MM format').optional(),
   search: z.string().trim().max(120).optional(),
-  status: z.enum(['paid', 'unpaid', 'partial', 'overdue']).optional(),
+  status: z
+    .enum(['paid', 'unpaid', 'partial', 'overdue', 'upcoming', 'due_soon'])
+    .optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(20),
 })

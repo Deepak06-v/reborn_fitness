@@ -9,7 +9,7 @@ import {
   deriveBaseStatus,
   deriveStatus,
   outstandingBalance,
-  type PaymentStatus,
+  type PaymentFilterStatus,
 } from '../utils/paymentStatus'
 import { escapeRegex, paymentStatusExpr } from '../utils/query'
 import { serializeMember, serializePayment } from './serializers'
@@ -37,7 +37,7 @@ export async function getPaymentDetail(id: string) {
 export interface ListPaymentsParams {
   month?: string
   search?: string
-  status?: PaymentStatus
+  status?: PaymentFilterStatus
   page: number
   limit: number
 }
@@ -125,7 +125,7 @@ export async function listPayments(params: ListPaymentsParams) {
 export async function getPaymentsForExport(params: {
   month?: string
   search?: string
-  status?: PaymentStatus
+  status?: PaymentFilterStatus
 }) {
   const month = params.month ?? currentMonth()
   const now = new Date()

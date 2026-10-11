@@ -1,7 +1,17 @@
 export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other'
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overdue'
+export type PaymentFilterStatus = PaymentStatus | 'upcoming' | 'due_soon'
+export type DueState = 'paid' | 'upcoming' | 'due_soon' | 'overdue'
 export type MemberStatus = 'active' | 'inactive'
 export type AdminRole = 'admin' | 'superadmin'
+
+export interface Plan {
+  id: string
+  name: string
+  durationMonths: number
+  pricePaise: number
+  price: number
+}
 
 export interface AdminUser {
   id: string
@@ -19,7 +29,13 @@ export interface Member {
   address: string | null
   notes: string | null
   membershipType: string | null
+  planId: string | null
+  planName: string | null
+  planDurationMonths: number | null
+  planPricePaise: number | null
+  nextBillingDate: string | null
   joiningDate: string
+  membershipStartDate: string
   monthlyFeePaise: number
   monthlyFee: number
   status: MemberStatus
@@ -29,11 +45,16 @@ export interface Member {
 
 export interface CurrentMonthPayment {
   id: string
+  invoiceNumber: string | null
+  planName: string | null
+  periodStart: string | null
+  periodEnd: string | null
   dueAmountPaise: number
   amountPaidPaise: number
   balancePaise: number
   dueDate: string
   status: PaymentStatus
+  dueState: DueState
 }
 
 export interface MemberListItem extends Member {
@@ -74,6 +95,13 @@ export interface Payment {
   member: string
   memberId: string
   billingMonth: string
+  invoiceNumber: string | null
+  planId: string | null
+  planName: string | null
+  durationMonths: number | null
+  planPricePaise: number | null
+  periodStart: string | null
+  periodEnd: string | null
   dueAmountPaise: number
   dueAmount: number
   amountPaidPaise: number
@@ -82,6 +110,7 @@ export interface Payment {
   balance: number
   dueDate: string
   status: PaymentStatus
+  dueState: DueState
   paymentEntries: PaymentEntry[]
   createdAt: string
   updatedAt: string

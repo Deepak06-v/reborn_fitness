@@ -7,12 +7,12 @@ import type { MemberDetailResponse } from '../types'
 import { MemberFormModal } from '../components/MemberFormModal'
 import { PaymentDetailModal } from '../components/PaymentDetailModal'
 import {
+  DueBadge,
   MemberStatusBadge,
   PageHeader,
   Panel,
   Spinner,
   StatCard,
-  StatusBadge,
 } from '../components/ui'
 import { useToast } from '../components/useToast'
 
@@ -152,8 +152,21 @@ export function MemberDetailsPage() {
               <dd className="text-white">{formatDate(member.joiningDate)}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-dim">Monthly fee</dt>
+              <dt className="text-dim">Plan</dt>
+              <dd className="text-white">
+                {member.planName ?? member.membershipType ?? '—'}
+                {member.planDurationMonths
+                  ? ` · ${member.planDurationMonths} mo`
+                  : ''}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-dim">Plan price</dt>
               <dd className="text-white">{formatPaise(member.monthlyFeePaise)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-dim">Next billing</dt>
+              <dd className="text-white">{formatDate(member.nextBillingDate)}</dd>
             </div>
           </dl>
           {member.notes ? (
@@ -187,7 +200,7 @@ export function MemberDetailsPage() {
                 <table className="w-full min-w-[560px] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-hairline">
-                      {['Month', 'Due', 'Paid', 'Balance', 'Status', ''].map((heading) => (
+                      {['Bill', 'Due', 'Paid', 'Balance', 'Status', ''].map((heading) => (
                         <th
                           key={heading}
                           className="px-4 py-3 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-dim"
@@ -203,8 +216,17 @@ export function MemberDetailsPage() {
                         key={payment.id}
                         className="border-b border-hairline/60 last:border-0"
                       >
-                        <td className="px-4 py-3 font-body text-sm text-white">
-                          {formatMonth(payment.billingMonth)}
+                        <td className="px-4 py-3">
+                          <p className="font-body text-sm text-white">
+                            {formatMonth(payment.billingMonth)}
+                            {payment.planName ? ` · ${payment.planName}` : ''}
+                          </p>
+                          <p className="font-mono text-[0.625rem] text-dim">
+                            {payment.invoiceNumber ?? ''}
+                            {payment.periodStart && payment.periodEnd
+                              ? ` · ${formatDate(payment.periodStart)} – ${formatDate(payment.periodEnd)}`
+                              : ''}
+                          </p>
                         </td>
                         <td className="px-4 py-3 font-body text-sm text-muted">
                           {formatPaise(payment.dueAmountPaise)}
@@ -216,7 +238,7 @@ export function MemberDetailsPage() {
                           {formatPaise(payment.balancePaise)}
                         </td>
                         <td className="px-4 py-3">
-                          <StatusBadge status={payment.status} />
+                          <DueBadge state={payment.dueState} />
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button

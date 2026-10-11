@@ -22,7 +22,7 @@ async function addMember(overrides: Record<string, unknown> = {}) {
       fullName: 'Alice Kumar',
       phone: '9876543210',
       joiningDate: '2026-06-02',
-      monthlyFeePaise: 150000,
+      planId: 'monthly',
       ...overrides,
     })
     .expect(201)
@@ -70,26 +70,18 @@ describe('dashboard', () => {
       fullName: 'Alice',
       phone: '9000000001',
       joiningDate: '2026-06-02',
-      monthlyFeePaise: 150000,
     })
     await addMember({
       fullName: 'Bob',
       phone: '9000000002',
-      joiningDate: '2026-01-10',
-      monthlyFeePaise: 150000,
+      joiningDate: '2026-06-05',
     })
-
-    await session.agent
-      .post('/api/admin/payments/generate-month')
-      .set('x-csrf-token', session.csrf)
-      .send({ billingMonth: '2026-06', dueDate: '2026-06-10' })
-      .expect(201)
 
     const alicePayment = await findPayment(alice.memberId, '2026-06')
     await session.agent
       .post(`/api/admin/payments/${alicePayment.id}/entries`)
       .set('x-csrf-token', session.csrf)
-      .send({ method: 'cash', paymentDate: '2026-06-05', amountPaise: 150000 })
+      .send({ method: 'cash', paymentDate: '2026-06-05', amountPaise: 100000 })
       .expect(201)
 
     const response = await session.agent
@@ -98,11 +90,11 @@ describe('dashboard', () => {
     const metrics = response.body.metrics
 
     expect(metrics.totalActiveMembers).toBe(2)
-    expect(metrics.newMembersThisMonth).toBe(1)
-    expect(metrics.expectedMonthlyFeesPaise).toBe(300000)
-    expect(metrics.collectionsThisMonthPaise).toBe(150000)
-    expect(metrics.outstandingPaymentsPaise).toBe(150000)
-    expect(metrics.overduePaymentsPaise).toBe(150000)
+    expect(metrics.newMembersThisMonth).toBe(2)
+    expect(metrics.expectedMonthlyFeesPaise).toBe(200000)
+    expect(metrics.collectionsThisMonthPaise).toBe(100000)
+    expect(metrics.outstandingPaymentsPaise).toBe(100000)
+    expect(metrics.overduePaymentsPaise).toBe(100000)
     expect(response.body.statusOverview.paid).toBe(1)
     expect(response.body.statusOverview.overdue).toBe(1)
     expect(response.body.recentMembers).toHaveLength(2)

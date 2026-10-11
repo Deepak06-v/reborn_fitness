@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   clearDatabase,
   createAdmin,
+  istDayOf,
   loadApp,
   loginAgent,
   setupTestEnv,
@@ -24,7 +25,7 @@ async function addMember(
       fullName: 'Alice Kumar',
       phone: '98765 43210',
       joiningDate: '2026-01-15',
-      monthlyFeePaise: 150000,
+      planId: 'monthly',
       ...overrides,
     })
     .expect(201)
@@ -47,12 +48,47 @@ beforeEach(async () => {
 })
 
 describe('member management', () => {
-  it('creates a member with a generated ID and normalized phone', async () => {
+  it('creates a member with a generated ID, normalized phone and plan', async () => {
     const member = await addMember()
     expect(member.memberId).toMatch(/^RBF-\d{4}$/)
     expect(member.phone).toBe('9876543210')
-    expect(member.monthlyFeePaise).toBe(150000)
+    expect(member.planId).toBe('monthly')
+    expect(member.planName).toBe('Monthly')
+    expect(member.planDurationMonths).toBe(1)
+    expect(member.planPricePaise).toBe(100000)
+    // The plan catalogue is authoritative, not any client-supplied fee.
+    expect(member.monthlyFeePaise).toBe(100000)
     expect(member.status).toBe('active')
+    expect(istDayOf(member.nextBillingDate as string)).toBe('2026-02-15')
+  })
+
+  it('ignores a client-supplied fee in favour of the plan price', async () => {
+    const member = await addMember({ planId: 'six-months', monthlyFeePaise: 1 })
+    expect(member.monthlyFeePaise).toBe(500000)
+    expect(member.planDurationMonths).toBe(6)
+  })
+
+  it('requires a known membership plan', async () => {
+    await session.agent
+      .post('/api/admin/members')
+      .set('x-csrf-token', session.csrf)
+      .send({
+        fullName: 'No Plan',
+        phone: '9000000010',
+        joiningDate: '2026-01-15',
+      })
+      .expect(422)
+
+    await session.agent
+      .post('/api/admin/members')
+      .set('x-csrf-token', session.csrf)
+      .send({
+        fullName: 'Bad Plan',
+        phone: '9000000011',
+        joiningDate: '2026-01-15',
+        planId: 'platinum',
+      })
+      .expect(422)
   })
 
   it('rejects invalid phone numbers', async () => {
@@ -63,7 +99,7 @@ describe('member management', () => {
         fullName: 'Bad Phone',
         phone: '123',
         joiningDate: '2026-01-15',
-        monthlyFeePaise: 100000,
+        planId: 'monthly',
       })
       .expect(422)
   })
@@ -77,7 +113,7 @@ describe('member management', () => {
         fullName: 'Duplicate',
         phone: '9876543210',
         joiningDate: '2026-02-01',
-        monthlyFeePaise: 100000,
+        planId: 'monthly',
       })
       .expect(409)
   })
@@ -98,14 +134,16 @@ describe('member management', () => {
     expect(search.body.items[0].fullName).toBe('Bob Singh')
   })
 
-  it('updates member details and monthly fee', async () => {
+  it('changes a member plan and derives the fee from the plan', async () => {
     const member = await addMember()
     const updated = await session.agent
       .patch(`/api/admin/members/${member.id}`)
       .set('x-csrf-token', session.csrf)
-      .send({ monthlyFeePaise: 200000, fullName: 'Alice K' })
+      .send({ planId: 'three-months', fullName: 'Alice K' })
       .expect(200)
-    expect(updated.body.member.monthlyFeePaise).toBe(200000)
+    expect(updated.body.member.planId).toBe('three-months')
+    expect(updated.body.member.planDurationMonths).toBe(3)
+    expect(updated.body.member.monthlyFeePaise).toBe(270000)
     expect(updated.body.member.fullName).toBe('Alice K')
   })
 

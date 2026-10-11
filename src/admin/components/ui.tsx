@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { paymentStatusLabel, paymentStatusTone } from '../format'
-import type { MemberStatus, PaymentStatus } from '../types'
+import { dueStateLabel, dueStateTone, paymentStatusLabel, paymentStatusTone } from '../format'
+import type { DueState, MemberStatus, PaymentStatus } from '../types'
 
 export function Spinner({ className }: { className?: string }) {
   return (
@@ -104,6 +104,27 @@ export function StatusBadge({ status }: { status: PaymentStatus }) {
       )}
     >
       {paymentStatusLabel[status]}
+    </span>
+  )
+}
+
+/**
+ * Bill state badge: green = paid, yellow = upcoming, red = due soon / overdue.
+ */
+export function DueBadge({ state }: { state: DueState }) {
+  const tones = {
+    lime: 'border-lime/40 bg-lime/10 text-lime',
+    accent: 'border-accent/40 bg-accent/10 text-accent',
+    danger: 'border-red-500/40 bg-red-500/10 text-red-300',
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em]',
+        tones[dueStateTone[state]],
+      )}
+    >
+      {dueStateLabel[state]}
     </span>
   )
 }
