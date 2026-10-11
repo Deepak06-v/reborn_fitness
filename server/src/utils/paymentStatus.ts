@@ -1,7 +1,7 @@
 export type BasePaymentStatus = 'unpaid' | 'partial' | 'paid'
 export type PaymentStatus = BasePaymentStatus | 'overdue'
-/** Filter values additionally expose the time-sensitive upcoming/due_soon states. */
-export type PaymentFilterStatus = PaymentStatus | 'upcoming' | 'due_soon'
+/** Filter values are the live, colour-coded due states of a bill. */
+export type PaymentFilterStatus = DueState
 
 /**
  * Stored status (persisted) intentionally omits "overdue" because overdue
@@ -25,7 +25,8 @@ export function deriveStatus(
 ): PaymentStatus {
   const balance = dueAmountPaise - amountPaidPaise
   if (balance <= 0) return 'paid'
-  if (dueDate.getTime() < now.getTime()) return 'overdue'
+  // Compare whole IST calendar days so a bill due "today" is not yet overdue.
+  if (istDay(dueDate) < istDay(now)) return 'overdue'
   if (amountPaidPaise > 0) return 'partial'
   return 'unpaid'
 }
@@ -40,16 +41,16 @@ export function outstandingBalance(
 /**
  * Colour-coded payment state used by the admin UI:
  *   - paid      -> green  (nothing outstanding)
- *   - upcoming  -> yellow (unpaid, due date is more than 2 days away)
- *   - due_soon  -> red    (unpaid, due today or within the next 2 days)
- *   - overdue   -> red    (unpaid, due date already passed)
+ *   - unpaid    -> yellow (outstanding, due date is more than 7 days away)
+ *   - due_soon  -> red    (outstanding, due today or within the next 7 days)
+ *   - overdue   -> red    (outstanding, due date already passed)
  *
  * Comparison is done on whole IST calendar days so that a bill due "today" is
  * reported as due_soon rather than overdue.
  */
-export type DueState = 'paid' | 'upcoming' | 'due_soon' | 'overdue'
+export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
 
-export const DUE_SOON_DAYS = 2
+export const DUE_SOON_DAYS = 7
 
 function istDay(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -73,5 +74,5 @@ export function deriveDueState(
   if (dueDay < today) return 'overdue'
 
   const soonLimit = istDay(new Date(now.getTime() + DUE_SOON_DAYS * 86_400_000))
-  return dueDay <= soonLimit ? 'due_soon' : 'upcoming'
+  return dueDay <= soonLimit ? 'due_soon' : 'unpaid'
 }

@@ -4,17 +4,19 @@ import { Member } from '../models/Member'
 import { MonthlyPayment, type MonthlyPaymentDoc, type PaymentMethod } from '../models/MonthlyPayment'
 import { ApiError } from '../utils/errors'
 import { paiseToRupees } from '../utils/money'
-import { currentMonth } from '../utils/month'
+import { istDay } from '../utils/month'
 import {
   deriveBaseStatus,
-  deriveStatus,
+  deriveDueState,
   outstandingBalance,
   type PaymentFilterStatus,
 } from '../utils/paymentStatus'
 import { escapeRegex, paymentStatusExpr } from '../utils/query'
+import { reconcileAllBilling } from './billing'
 import { serializeMember, serializePayment } from './serializers'
 
 export async function getPaymentDetail(id: string) {
+  await reconcileAllBilling()
   if (!Types.ObjectId.isValid(id)) throw ApiError.notFound('Billing record not found')
   const payment = await MonthlyPayment.findById(id)
   if (!payment) throw ApiError.notFound('Billing record not found')
@@ -43,10 +45,12 @@ export interface ListPaymentsParams {
 }
 
 export async function listPayments(params: ListPaymentsParams) {
-  const month = params.month ?? currentMonth()
+  await reconcileAllBilling()
   const now = new Date()
 
-  const baseMatch: FilterQuery<MonthlyPaymentDoc> = { billingMonth: month }
+  // Absent month => every billing period (the combined view); present => scoped.
+  const baseMatch: FilterQuery<MonthlyPaymentDoc> = {}
+  if (params.month) baseMatch.billingMonth = params.month
   if (params.search) {
     const rx = new RegExp(escapeRegex(params.search.trim()), 'i')
     const members = await Member.find({
@@ -63,7 +67,7 @@ export async function listPayments(params: ListPaymentsParams) {
   const [total, docs, totalsAgg] = await Promise.all([
     MonthlyPayment.countDocuments(query),
     MonthlyPayment.find(query)
-      .sort({ memberId: 1 })
+      .sort({ billingMonth: -1, memberId: 1 })
       .skip((page - 1) * limit)
       .limit(limit),
     MonthlyPayment.aggregate<{
@@ -97,7 +101,7 @@ export async function listPayments(params: ListPaymentsParams) {
   const totals = totalsAgg[0] ?? { _id: null, due: 0, paid: 0, remaining: 0 }
 
   return {
-    month,
+    month: params.month ?? null,
     items: docs.map((doc) => {
       const member = memberMap.get(doc.member.toString())
       return {
@@ -127,9 +131,10 @@ export async function getPaymentsForExport(params: {
   search?: string
   status?: PaymentFilterStatus
 }) {
-  const month = params.month ?? currentMonth()
+  await reconcileAllBilling()
   const now = new Date()
-  const query: FilterQuery<MonthlyPaymentDoc> = { billingMonth: month }
+  const query: FilterQuery<MonthlyPaymentDoc> = {}
+  if (params.month) query.billingMonth = params.month
   if (params.search) {
     const rx = new RegExp(escapeRegex(params.search.trim()), 'i')
     const members = await Member.find({
@@ -139,23 +144,32 @@ export async function getPaymentsForExport(params: {
   }
   if (params.status) query.$expr = paymentStatusExpr(params.status, now)
 
-  const docs = await MonthlyPayment.find(query).sort({ memberId: 1 })
+  const docs = await MonthlyPayment.find(query).sort({ billingMonth: -1, memberId: 1 })
   const members = await Member.find({ _id: { $in: docs.map((doc) => doc.member) } })
   const memberMap = new Map(members.map((member) => [member._id.toString(), member]))
 
   return docs.map((doc) => {
     const member = memberMap.get(doc.member.toString())
     const balance = outstandingBalance(doc.dueAmountPaise, doc.amountPaidPaise)
+    const lastEntry = [...doc.paymentEntries]
+      .filter((entry) => !entry.voided)
+      .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime())[0]
     return {
       memberRef: member?.memberId ?? doc.memberId,
       fullName: member?.fullName ?? 'Unknown member',
       phone: member?.phone ?? '',
-      billingMonth: doc.billingMonth,
+      planName: doc.planName ?? '',
+      joiningDate: member?.joiningDate ? istDay(member.joiningDate) : '',
+      periodStart: doc.periodStart ? istDay(doc.periodStart) : '',
+      periodEnd: doc.periodEnd ? istDay(doc.periodEnd) : '',
+      dueDate: istDay(doc.dueDate),
+      invoiceNumber: doc.invoiceNumber ?? '',
       dueAmount: paiseToRupees(doc.dueAmountPaise),
       amountPaid: paiseToRupees(doc.amountPaidPaise),
       balance: paiseToRupees(balance),
-      dueDate: doc.dueDate.toISOString(),
-      status: deriveStatus(doc.dueAmountPaise, doc.amountPaidPaise, doc.dueDate),
+      status: deriveDueState(doc.dueAmountPaise, doc.amountPaidPaise, doc.dueDate, now),
+      lastPaymentDate: lastEntry ? istDay(lastEntry.paymentDate) : '',
+      lastPaymentMethod: lastEntry?.method ?? '',
     }
   })
 }

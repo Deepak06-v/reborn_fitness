@@ -20,6 +20,8 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value === 'true'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(8),
+  // How often the in-process billing job reconciles recurring billing periods.
+  BILLING_RECONCILE_INTERVAL_MINUTES: z.coerce.number().positive().default(360),
   // Optional at parse time; the production requirement is enforced below.
   // Blank values (`ADMIN_USERNAME=`) are treated as "not configured".
   ADMIN_USERNAME: z
@@ -71,4 +73,5 @@ export const env = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   sessionTtlMs: data.SESSION_TTL_HOURS * 60 * 60 * 1000,
+  billingReconcileIntervalMinutes: data.BILLING_RECONCILE_INTERVAL_MINUTES,
 }

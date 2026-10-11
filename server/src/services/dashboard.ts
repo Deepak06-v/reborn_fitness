@@ -3,6 +3,7 @@ import { MonthlyPayment } from '../models/MonthlyPayment'
 import { lastNMonths, monthEndExclusive, monthRange, monthStart } from '../utils/month'
 import { deriveStatus, type PaymentStatus } from '../utils/paymentStatus'
 import { paiseToRupees } from '../utils/money'
+import { reconcileAllBilling } from './billing'
 import { serializeMember } from './serializers'
 
 interface SumResult {
@@ -245,6 +246,7 @@ async function overdueMembers(month: string, now: Date) {
 }
 
 export async function getDashboard(month: string) {
+  await reconcileAllBilling()
   const now = new Date()
   const { start, end } = monthRange(month)
 

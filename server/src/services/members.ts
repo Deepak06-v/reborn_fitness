@@ -12,7 +12,7 @@ import {
 } from '../utils/paymentStatus'
 import { isValidPhone, normalizePhone } from '../utils/phone'
 import { escapeRegex, paymentStatusExpr } from '../utils/query'
-import { createInitialPeriod } from './billing'
+import { createInitialPeriod, reconcileAllBilling, reconcileMemberBilling } from './billing'
 import { serializeMember, serializePayment } from './serializers'
 
 export interface MemberInput {
@@ -155,6 +155,9 @@ export async function updateMember(
   if (patch.status !== undefined) member.status = patch.status
 
   await member.save()
+  // A joining-date or plan change re-anchors the billing series from the last
+  // issued period, so already-issued bills are never rewritten.
+  await reconcileMemberBilling(member)
   return member
 }
 
@@ -176,6 +179,7 @@ export async function setMemberStatus(
 }
 
 export async function listMembers(params: ListMembersParams) {
+  await reconcileAllBilling()
   const filter: FilterQuery<MemberDoc> = {}
   if (params.status) filter.status = params.status
   if (params.search) {
@@ -275,6 +279,7 @@ export async function listMembers(params: ListMembersParams) {
 
 export async function getMemberDetail(id: string) {
   const member = await getMemberOrThrow(id)
+  await reconcileMemberBilling(member)
   const payments = await MonthlyPayment.find({ member: member._id }).sort({
     periodStart: -1,
     billingMonth: -1,

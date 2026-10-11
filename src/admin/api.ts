@@ -1,7 +1,6 @@
 import type {
   AdminUser,
   DashboardResponse,
-  GenerateMonthSummary,
   Member,
   MemberDetailResponse,
   MemberListResponse,
@@ -196,12 +195,6 @@ export const adminApi = {
     },
     get(id: string): Promise<PaymentDetailResponse> {
       return request<PaymentDetailResponse>(`/payments/${id}`)
-    },
-    generateMonth(billingMonth: string, dueDate: string): Promise<GenerateMonthSummary> {
-      return request<GenerateMonthSummary>('/payments/generate-month', {
-        method: 'POST',
-        body: { billingMonth, dueDate },
-      })
     },
     recordEntry(
       id: string,

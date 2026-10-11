@@ -109,7 +109,7 @@ export function StatusBadge({ status }: { status: PaymentStatus }) {
 }
 
 /**
- * Bill state badge: green = paid, yellow = upcoming, red = due soon / overdue.
+ * Bill state badge: green = paid, yellow = unpaid, red = due soon / overdue.
  */
 export function DueBadge({ state }: { state: DueState }) {
   const tones = {

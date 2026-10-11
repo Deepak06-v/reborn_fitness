@@ -18,10 +18,8 @@ import { useToast } from '../components/useToast'
 const statusFilters: { value: string; label: string }[] = [
   { value: '', label: 'All payment states' },
   { value: 'paid', label: 'Paid' },
-  { value: 'upcoming', label: 'Upcoming (not due)' },
-  { value: 'due_soon', label: 'Due soon' },
-  { value: 'partial', label: 'Partial' },
   { value: 'unpaid', label: 'Unpaid' },
+  { value: 'due_soon', label: 'Due soon' },
   { value: 'overdue', label: 'Overdue' },
 ]
 

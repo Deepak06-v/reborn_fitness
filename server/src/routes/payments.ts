@@ -3,13 +3,12 @@ import type { z } from 'zod'
 import { validate } from '../middleware/validate'
 import {
   correctionSchema,
-  generateMonthSchema,
   listPaymentsQuerySchema,
   paymentIdParamSchema,
   recordPaymentSchema,
 } from '../validation/payments'
 import { asyncHandler } from '../utils/errors'
-import { generateMonthlyDues } from '../services/billing'
+import { istDay } from '../utils/month'
 import {
   correctPayment,
   getPaymentDetail,
@@ -41,29 +40,42 @@ router.get(
     }
     const rows = await getPaymentsForExport(query)
     const header = [
+      'Member Name',
       'Member ID',
-      'Name',
       'Phone',
-      'Billing Month',
-      'Due (INR)',
-      'Paid (INR)',
-      'Balance (INR)',
+      'Plan',
+      'Joining Date',
+      'Period Start',
+      'Period End',
       'Due Date',
+      'Invoice Number',
+      'Amount Due (INR)',
+      'Amount Paid (INR)',
+      'Outstanding (INR)',
       'Status',
+      'Last Payment Date',
+      'Last Payment Method',
     ]
+    const money = (value: number): string => value.toFixed(2)
     const lines = [header.join(',')]
     for (const row of rows) {
       lines.push(
         [
-          row.memberRef,
           row.fullName,
+          row.memberRef,
           row.phone,
-          row.billingMonth,
-          row.dueAmount,
-          row.amountPaid,
-          row.balance,
-          row.dueDate.slice(0, 10),
+          row.planName,
+          row.joiningDate,
+          row.periodStart,
+          row.periodEnd,
+          row.dueDate,
+          row.invoiceNumber,
+          money(row.dueAmount),
+          money(row.amountPaid),
+          money(row.balance),
           row.status,
+          row.lastPaymentDate,
+          row.lastPaymentMethod,
         ]
           .map(csvCell)
           .join(','),
@@ -72,9 +84,10 @@ router.get(
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="reborn-payments-${query.month ?? 'current'}.csv"`,
+      `attachment; filename="reborn-fitness-payments-${istDay(new Date())}.csv"`,
     )
-    res.send(lines.join('\n'))
+    // RFC 4180 line endings; UTF-8 without a BOM.
+    res.send(lines.join('\r\n'))
   }),
 )
 
@@ -83,16 +96,6 @@ router.get(
   validate({ query: listPaymentsQuerySchema }),
   asyncHandler(async (req, res) => {
     res.json(await listPayments(req.query as unknown as ListPaymentsParams))
-  }),
-)
-
-router.post(
-  '/generate-month',
-  validate({ body: generateMonthSchema }),
-  asyncHandler(async (req, res) => {
-    const body = req.body as { billingMonth: string; dueDate: Date }
-    const summary = await generateMonthlyDues(body)
-    res.status(201).json(summary)
   }),
 )
 

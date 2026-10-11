@@ -72,6 +72,7 @@ Fill in `server/.env` (see the file for descriptions):
 | `CORS_ORIGINS` | Comma-separated allowed origins for credentialed CORS |
 | `COOKIE_SECURE` | `true` behind HTTPS so cookies are `Secure` |
 | `SESSION_TTL_HOURS` | Session lifetime in hours |
+| `BILLING_RECONCILE_INTERVAL_MINUTES` | How often the recurring-billing job runs (default `360`) |
 | `PORT` | API port (default `4000`) |
 | `ADMIN_USERNAME` | Admin login username (min 3 chars; required in production) |
 | `ADMIN_PASSWORD` | Admin login password (min 12 chars; required in production) |
@@ -174,6 +175,12 @@ npm run build:server   # or: npm --prefix server run build
 npm run start:server   # or: npm --prefix server run start
 ```
 
+The recurring-billing scheduler runs inside the API process, so no external cron
+is needed. Reconciliation is also triggered on admin reads, so a suspended or
+restarted Render instance self-heals on the next request. Tune the interval with
+`BILLING_RECONCILE_INTERVAL_MINUTES` (default `360`); the job is idempotent, so
+running it more often is harmless.
+
 ## Admin console
 
 Reachable at `/admin`. There is intentionally **no link from the public site**.
@@ -184,9 +191,10 @@ Reachable at `/admin`. There is intentionally **no link from the public site**.
 - **Members** — search by name/ID/phone, filter by member or payment status, sort,
   paginate, create/edit, activate/deactivate (records are never deleted).
 - **Member detail** — profile, lifetime billed/paid/outstanding, full payment history.
-- **Payments** — generate monthly dues, filter/search the month's bills, record
-  full/partial payments, void mistaken entries with a reason (optional replacement),
-  and export the current view to CSV.
+- **Payments** — every member's billing periods are created and maintained
+  automatically (no manual generation), filter/search across all periods or a
+  single month, record full/partial payments, void mistaken entries with a reason
+  (optional replacement), and export the current view to CSV.
 
 ### Auth & security model
 
@@ -203,12 +211,34 @@ Reachable at `/admin`. There is intentionally **no link from the public site**.
 - **Money is stored as integer paise**; the UI converts to ₹ for display.
 - Dates are formatted in **Asia/Kolkata**; billing months are `YYYY-MM`.
 - A unique index on `{ member, billingMonth }` guarantees one bill per member per month.
-- The due amount is snapshotted at generation time, so later fee changes never rewrite
-  historical bills.
-- `status` is stored as `unpaid | partial | paid`; **`overdue` is derived live**
-  (balance > 0 and due date in the past) rather than persisted.
-- **Billing policy:** active members who joined before the end of the billing month are
-  billed at the full monthly fee — **no proration**; inactive members are never billed.
+
+### Automatic billing
+
+Billing periods are created and maintained by the backend — there is **no manual
+"generate" action**. Adding a member issues their first period from their joining
+date and plan; a reconciliation job then chains each later period forward from the
+membership start using the plan duration (monthly/quarterly/half-yearly/yearly).
+
+- **Anchored cycles** — the joining day is the anchor. If a later month is shorter
+  the period is clamped to that month's last day, then the anchor day resumes
+  (e.g. joining on the 31st bills `2026-02-28`, then `2026-03-31`).
+- **Idempotent & restart-safe** — a unique `{ member, billingMonth }` index plus an
+  in-flight guard mean overlapping runs and restarts never duplicate bills, and a
+  missed run is backfilled on the next pass. No unlimited future bills are created:
+  only periods whose start date has arrived.
+- **Runs on demand and on a schedule** — reconciliation runs on every payments,
+  members and dashboard read (so the console is always current without relying on
+  client timers), plus a background interval job
+  (`BILLING_RECONCILE_INTERVAL_MINUTES`) started on boot.
+- **Immutable history** — the plan price is snapshotted per period, so a later plan
+  change only affects the next unissued period and never rewrites issued bills.
+- **Membership vs payment status** — deactivating a member stops new bills and never
+  deletes history; `status` is stored as `unpaid | partial | paid` while the
+  **`due_soon`/`overdue` state is derived live** in IST: unpaid and due more than
+  7 calendar days out → **unpaid**; due within the next 7 days (including today) →
+  **due soon**; due date passed with a balance → **overdue**.
+- **Billing policy** — active members are billed the full plan price per period
+  (**no proration**); inactive members are never billed further.
 
 ### API endpoints
 
@@ -224,9 +254,8 @@ All admin routes are prefixed with `/api/admin` and require a session unless not
 | `POST` `PATCH` | `/members` · `/members/:id` | create / update |
 | `POST` | `/members/:id/activate` · `/deactivate` | status changes |
 | `GET` | `/members/:id` | profile + payment history + summary |
-| `GET` | `/payments` | month's bills + totals |
+| `GET` | `/payments` | billing periods (all, or one `month`) + totals |
 | `GET` | `/payments/export` | CSV of the filtered view |
-| `POST` | `/payments/generate-month` | create the month's bills |
 | `GET` | `/payments/:id` | bill detail with entries |
 | `POST` | `/payments/:id/entries` | record a payment |
 | `POST` | `/payments/:id/corrections` | void/correct an entry |
@@ -258,10 +287,11 @@ npm run test:server
 ```
 
 Covers authentication and CSRF, member CRUD/validation/duplicate detection,
-billing generation (no proration, excludes future joiners, never duplicates),
-full/partial payments, overpayment rejection, live overdue derivation, fee-change
-snapshots, collection-by-payment-date, and history-preserving corrections. The
-suite uses `mongodb-memory-server`, so no external database is required.
+automatic recurring billing (anchored month-end cycles, idempotency, concurrency,
+inactive-member handling, fee-change snapshots), full/partial payments,
+overpayment rejection, live due-state derivation, collection-by-payment-date,
+and history-preserving corrections. The suite uses `mongodb-memory-server`, so no
+external database is required.
 
 ## Design tokens
 

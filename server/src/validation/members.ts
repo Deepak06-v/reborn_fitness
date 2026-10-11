@@ -2,14 +2,7 @@ import { z } from 'zod'
 import { PLAN_IDS } from '../config/plans'
 import { isValidMonth } from '../utils/month'
 
-const paymentStatusValues = [
-  'paid',
-  'unpaid',
-  'partial',
-  'overdue',
-  'upcoming',
-  'due_soon',
-] as const
+const paymentStatusValues = ['paid', 'unpaid', 'due_soon', 'overdue'] as const
 
 const optionalText = (max: number) =>
   z

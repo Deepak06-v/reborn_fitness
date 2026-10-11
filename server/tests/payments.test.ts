@@ -1,4 +1,5 @@
 import type { Express } from 'express'
+import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   clearDatabase,
@@ -31,13 +32,21 @@ async function addMember(overrides: Record<string, unknown> = {}) {
   return response.body.member as { id: string; memberId: string }
 }
 
-async function generate(billingMonth: string, dueDate: string) {
-  const response = await session.agent
-    .post('/api/admin/payments/generate-month')
-    .set('x-csrf-token', session.csrf)
-    .send({ billingMonth, dueDate })
-    .expect(201)
-  return response.body
+async function memberPayments(id: string) {
+  const response = await session.agent.get(`/api/admin/members/${id}`).expect(200)
+  return response.body.payments as Array<{
+    billingMonth: string
+    invoiceNumber: string | null
+    durationMonths: number | null
+    periodStart: string
+    periodEnd: string
+    dueDate: string
+    dueAmountPaise: number
+    amountPaidPaise: number
+    balancePaise: number
+    status: string
+    dueState: string
+  }>
 }
 
 async function findPayment(memberRef: string, month: string) {
@@ -74,7 +83,7 @@ beforeEach(async () => {
   session = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
 })
 
-describe('plan-based period billing', () => {
+describe('automatic period billing', () => {
   it('auto-creates the first period bill when a member is created', async () => {
     const member = await addMember({ joiningDate: '2026-01-15' })
     const jan = await findPayment(member.memberId, '2026-01')
@@ -90,65 +99,80 @@ describe('plan-based period billing', () => {
     expect(jan.balancePaise).toBe(100000)
   })
 
-  it('generates one bill per plan period and never duplicates', async () => {
-    const member = await addMember({ joiningDate: '2026-01-15' })
-    const first = await generate('2026-02', '2026-02-10')
-    expect(first.created).toBe(1)
+  it('creates each recurring period exactly once (idempotent)', async () => {
+    const member = await addMember({ joiningDate: istDay(-95) })
+    const first = await memberPayments(member.id)
+    expect(first.length).toBeGreaterThanOrEqual(4)
+    const months = first.map((payment) => payment.billingMonth)
+    expect(new Set(months).size).toBe(months.length)
 
-    const feb = await findPayment(member.memberId, '2026-02')
-    expect(istDayOf(feb.periodStart)).toBe('2026-02-15')
-    expect(istDayOf(feb.periodEnd)).toBe('2026-03-15')
-
-    const second = await generate('2026-02', '2026-02-10')
-    expect(second.created).toBe(0)
-    expect(second.existing).toBeGreaterThanOrEqual(1)
+    const second = await memberPayments(member.id)
+    expect(second.length).toBe(first.length)
   })
 
   it('bills a multi-month plan once for the whole period', async () => {
-    const member = await addMember({ joiningDate: '2026-01-10', planId: 'six-months' })
-    const jan = await findPayment(member.memberId, '2026-01')
-    expect(jan.dueAmountPaise).toBe(500000)
-    expect(jan.durationMonths).toBe(6)
-    expect(istDayOf(jan.periodEnd)).toBe('2026-07-10')
+    const member = await addMember({ joiningDate: '2026-05-10', planId: 'six-months' })
+    const may = await findPayment(member.memberId, '2026-05')
+    expect(may.dueAmountPaise).toBe(500000)
+    expect(may.durationMonths).toBe(6)
+    expect(istDayOf(may.periodEnd)).toBe('2026-11-10')
 
-    const tooEarly = await generate('2026-02', '2026-02-10')
-    expect(tooEarly.created).toBe(0)
-
-    const due = await generate('2026-07', '2026-07-10')
-    expect(due.created).toBe(1)
-    const jul = await findPayment(member.memberId, '2026-07')
-    expect(istDayOf(jul.periodStart)).toBe('2026-07-10')
-    expect(jul.dueAmountPaise).toBe(500000)
+    // The next six-month period starts in November, so no extra bill exists yet.
+    const payments = await memberPayments(member.id)
+    expect(payments).toHaveLength(1)
   })
 
-  it('does not bill inactive members', async () => {
-    const member = await addMember({ joiningDate: '2026-01-15' })
+  it('keeps the joining day as the cycle anchor across short months', async () => {
+    const member = await addMember({ joiningDate: '2026-01-31' })
+    const payments = await memberPayments(member.id)
+    const feb = payments.find((payment) => payment.billingMonth === '2026-02')
+    const mar = payments.find((payment) => payment.billingMonth === '2026-03')
+    expect(feb).toBeTruthy()
+    expect(mar).toBeTruthy()
+    // February has no 31st, so it clamps to the 28th; March resumes on the 31st.
+    expect(istDayOf(feb!.periodStart)).toBe('2026-02-28')
+    expect(istDayOf(mar!.periodStart)).toBe('2026-03-31')
+  })
+
+  it('does not bill an inactive member any further', async () => {
+    const member = await addMember({ joiningDate: istDay(-95) })
     await session.agent
       .post(`/api/admin/members/${member.id}/deactivate`)
       .set('x-csrf-token', session.csrf)
       .expect(200)
-    const summary = await generate('2026-02', '2026-02-10')
-    expect(summary.created).toBe(0)
+    const payments = await memberPayments(member.id)
+    expect(payments).toHaveLength(1)
   })
 
-  it('snapshots the plan price and preserves issued bills when the plan changes', async () => {
+  it('snapshots each period price so a plan change never rewrites history', async () => {
     const member = await addMember({ joiningDate: '2026-01-15' })
-    await generate('2026-02', '2026-02-10')
+    await memberPayments(member.id)
+
     await session.agent
       .patch(`/api/admin/members/${member.id}`)
       .set('x-csrf-token', session.csrf)
-      .send({ planId: 'three-months' })
+      .send({ planId: 'yearly' })
       .expect(200)
 
-    const jan = await findPayment(member.memberId, '2026-01')
-    const feb = await findPayment(member.memberId, '2026-02')
-    expect(jan.dueAmountPaise).toBe(100000)
-    expect(feb.dueAmountPaise).toBe(100000)
+    const after = await memberPayments(member.id)
+    // Every already-issued monthly period keeps its original price.
+    for (const payment of after) {
+      expect(payment.dueAmountPaise).toBe(100000)
+      expect(payment.durationMonths).toBe(1)
+    }
+  })
 
-    await generate('2026-03', '2026-03-10')
-    const mar = await findPayment(member.memberId, '2026-03')
-    expect(mar.dueAmountPaise).toBe(270000)
-    expect(mar.durationMonths).toBe(3)
+  it('never exposes manual bill generation', async () => {
+    await session.agent
+      .post('/api/admin/payments/generate-month')
+      .set('x-csrf-token', session.csrf)
+      .send({ billingMonth: '2026-03', dueDate: '2026-03-10' })
+      .expect(404)
+  })
+
+  it('requires authentication for billing lists and export', async () => {
+    await request(app).get('/api/admin/payments').expect(401)
+    await request(app).get('/api/admin/payments/export').expect(401)
   })
 })
 
@@ -199,16 +223,16 @@ describe('payment recording', () => {
       .expect(422)
   })
 
-  it('colour-codes due state as upcoming, due_soon and overdue', async () => {
-    const upcoming = await addMember({ phone: '9000000101', joiningDate: istDay(10) })
+  it('colour-codes due state as unpaid, due_soon and overdue', async () => {
+    const unpaid = await addMember({ phone: '9000000101', joiningDate: istDay(10) })
     const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(1) })
     const overdue = await addMember({ phone: '9000000103', joiningDate: istDay(-40) })
 
-    const futureBill = await findPayment(upcoming.memberId, istDay(10).slice(0, 7))
+    const futureBill = await findPayment(unpaid.memberId, istDay(10).slice(0, 7))
     const soonBill = await findPayment(dueSoon.memberId, istDay(1).slice(0, 7))
     const pastBill = await findPayment(overdue.memberId, istDay(-40).slice(0, 7))
 
-    expect(futureBill.dueState).toBe('upcoming')
+    expect(futureBill.dueState).toBe('unpaid')
     expect(soonBill.dueState).toBe('due_soon')
     expect(pastBill.dueState).toBe('overdue')
     expect(pastBill.status).toBe('overdue')
@@ -260,5 +284,41 @@ describe('payment corrections', () => {
       .set('x-csrf-token', session.csrf)
       .send({ entryId, reason: 'Double correction attempt' })
       .expect(409)
+  })
+})
+
+describe('payments CSV export', () => {
+  it('exports every billing period with the full column set and correct escaping', async () => {
+    await addMember({ fullName: 'Doe, John "JD"', phone: '9000000301', joiningDate: '2026-01-31' })
+
+    const response = await session.agent.get('/api/admin/payments/export').expect(200)
+    expect(response.headers['content-disposition']).toMatch(
+      /reborn-fitness-payments-\d{4}-\d{2}-\d{2}\.csv/,
+    )
+    const [header, ...rows] = response.text.split('\r\n')
+    expect(header).toBe(
+      [
+        'Member Name',
+        'Member ID',
+        'Phone',
+        'Plan',
+        'Joining Date',
+        'Period Start',
+        'Period End',
+        'Due Date',
+        'Invoice Number',
+        'Amount Due (INR)',
+        'Amount Paid (INR)',
+        'Outstanding (INR)',
+        'Status',
+        'Last Payment Date',
+        'Last Payment Method',
+      ].join(','),
+    )
+    expect(rows.length).toBeGreaterThanOrEqual(1)
+    // Commas and quotes in a value are escaped per RFC 4180.
+    expect(response.text).toContain('"Doe, John ""JD"""')
+    // Money is exported as a fixed 2-decimal rupee amount (100000 paise = 1000.00).
+    expect(rows[0]).toContain('1000.00')
   })
 })

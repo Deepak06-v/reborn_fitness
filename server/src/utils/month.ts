@@ -88,6 +88,40 @@ export function addMonthsClamped(date: Date, delta: number): Date {
   return new Date(`${targetYear}-${mm}-${dd}T00:00:00${IST_OFFSET}`)
 }
 
+/** The day-of-month (1-31) of a date in Asia/Kolkata. */
+export function istDayOfMonth(date: Date): number {
+  return Number(istDay(date).slice(8, 10))
+}
+
+/**
+ * Adds whole months to a date in Asia/Kolkata while pinning the day-of-month
+ * to a fixed anchor (clamped when the target month is shorter).
+ *
+ * Anchoring to the member's joining day keeps a billing cycle stable across
+ * short months: a cycle that starts on the 31st resumes on the 31st in every
+ * month that has one, and on the last day (28/29/30) otherwise.
+ */
+export function addMonthsAnchored(date: Date, delta: number, anchorDay: number): Date {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? '1970')
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? '01')
+
+  const total = year * 12 + (month - 1) + delta
+  const targetYear = Math.floor(total / 12)
+  const targetMonthIndex = ((total % 12) + 12) % 12
+  const daysInTarget = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate()
+  const targetDay = Math.min(Math.max(anchorDay, 1), daysInTarget)
+
+  const mm = String(targetMonthIndex + 1).padStart(2, '0')
+  const dd = String(targetDay).padStart(2, '0')
+  return new Date(`${targetYear}-${mm}-${dd}T00:00:00${IST_OFFSET}`)
+}
+
 export function lastNMonths(month: string, count: number): string[] {
   const months: string[] = []
   for (let i = count - 1; i >= 0; i -= 1) months.push(addMonths(month, -i))

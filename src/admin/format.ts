@@ -88,18 +88,19 @@ export const paymentStatusLabel: Record<PaymentStatus, string> = {
 
 /**
  * Colour-coded due state for a single bill:
- * green = paid, yellow = upcoming (not yet due), red = due soon / overdue.
+ * green = paid, yellow = unpaid (more than 7 days away),
+ * red = due soon / overdue.
  */
 export const dueStateTone: Record<DueState, 'lime' | 'accent' | 'danger'> = {
   paid: 'lime',
-  upcoming: 'accent',
+  unpaid: 'accent',
   due_soon: 'danger',
   overdue: 'danger',
 }
 
 export const dueStateLabel: Record<DueState, string> = {
   paid: 'Paid',
-  upcoming: 'Upcoming',
+  unpaid: 'Unpaid',
   due_soon: 'Due soon',
   overdue: 'Overdue',
 }

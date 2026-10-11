@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, Receipt, Search, Sparkles } from 'lucide-react'
+import { Download, Receipt, Search } from 'lucide-react'
 import { adminApi } from '../api'
-import { currentMonthValue, formatDate, formatMonth, formatPaise } from '../format'
+import { formatDate, formatMonth, formatPaise } from '../format'
 import type { PaymentListResponse } from '../types'
 import { PaymentDetailModal } from '../components/PaymentDetailModal'
 import {
-  AdminModal,
   DueBadge,
   EmptyState,
   PageHeader,
@@ -14,21 +13,18 @@ import {
   Spinner,
   StatCard,
 } from '../components/ui'
-import { useToast } from '../components/useToast'
 
 const statusFilters = [
   { value: '', label: 'All statuses' },
   { value: 'paid', label: 'Paid' },
-  { value: 'upcoming', label: 'Upcoming (not due)' },
-  { value: 'due_soon', label: 'Due soon' },
-  { value: 'partial', label: 'Partial' },
   { value: 'unpaid', label: 'Unpaid' },
+  { value: 'due_soon', label: 'Due soon' },
   { value: 'overdue', label: 'Overdue' },
 ]
 
 export function PaymentsPage() {
-  const { notify } = useToast()
-  const [month, setMonth] = useState(currentMonthValue())
+  // Empty month = every billing period (the combined view).
+  const [month, setMonth] = useState('')
   const [status, setStatus] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -38,10 +34,6 @@ export function PaymentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [paymentId, setPaymentId] = useState<string | null>(null)
-
-  const [generateOpen, setGenerateOpen] = useState(false)
-  const [dueDate, setDueDate] = useState(`${currentMonthValue()}-10`)
-  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -75,54 +67,24 @@ export function PaymentsPage() {
     void load()
   }, [load])
 
-  const runGenerate = async () => {
-    setGenerating(true)
-    try {
-      const summary = await adminApi.payments.generateMonth(month, dueDate)
-      notify(
-        `${summary.created} bill${summary.created === 1 ? '' : 's'} created · ${summary.existing} already existed`,
-        'success',
-      )
-      setGenerateOpen(false)
-      await load()
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Unable to generate bills', 'error')
-    } finally {
-      setGenerating(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Finance"
         title="Payments"
-        description="Generate monthly dues, record payments and reconcile outstanding balances."
+        description="Billing periods are created automatically from each member's joining date and plan. Record payments and track outstanding balances."
         actions={
-          <>
-            <a
-              href={adminApi.payments.exportUrl({
-                month,
-                status: status || undefined,
-                search: search || undefined,
-              })}
-              className="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Export CSV
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                setDueDate(`${month}-10`)
-                setGenerateOpen(true)
-              }}
-              className="inline-flex items-center gap-2 rounded-md border border-accent bg-accent px-4 py-2.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-accent/90"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Generate month
-            </button>
-          </>
+          <a
+            href={adminApi.payments.exportUrl({
+              month,
+              status: status || undefined,
+              search: search || undefined,
+            })}
+            className="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export CSV
+          </a>
         }
       />
 
@@ -130,7 +92,7 @@ export function PaymentsPage() {
         <StatCard
           label="Billed"
           value={formatPaise(data?.totals.billedPaise ?? 0)}
-          hint={`${data?.total ?? 0} bills · ${formatMonth(month)}`}
+          hint={`${data?.total ?? 0} bills${month ? ` · ${formatMonth(month)}` : ' · all periods'}`}
         />
         <StatCard
           label="Collected"
@@ -146,18 +108,32 @@ export function PaymentsPage() {
 
       <Panel className="p-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <label className="md:col-span-1">
+          <div className="md:col-span-1">
             <span className="label-telemetry mb-1.5 block">Month</span>
-            <input
-              type="month"
-              value={month}
-              onChange={(event) => {
-                setMonth(event.target.value || currentMonthValue())
-                setPage(1)
-              }}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 font-body text-sm text-white outline-none focus:border-accent"
-            />
-          </label>
+            <div className="flex gap-2">
+              <input
+                type="month"
+                value={month}
+                onChange={(event) => {
+                  setMonth(event.target.value)
+                  setPage(1)
+                }}
+                className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 font-body text-sm text-white outline-none focus:border-accent"
+              />
+              {month ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMonth('')
+                    setPage(1)
+                  }}
+                  className="shrink-0 rounded-md border border-hairline px-3 py-2 font-display text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
+                >
+                  All
+                </button>
+              ) : null}
+            </div>
+          </div>
           <label className="md:col-span-1">
             <span className="label-telemetry mb-1.5 block">Status</span>
             <select
@@ -247,6 +223,11 @@ export function PaymentsPage() {
                           {payment.planName ? ` · ${payment.planName}` : ''}
                         </p>
                       ) : null}
+                      {payment.periodStart ? (
+                        <p className="font-mono text-[0.625rem] text-dim">
+                          {formatDate(payment.periodStart)} – {formatDate(payment.periodEnd)}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 font-body text-sm text-muted">
                       {formatPaise(payment.dueAmountPaise)}
@@ -280,8 +261,8 @@ export function PaymentsPage() {
         ) : (
           <EmptyState
             icon={<Receipt className="h-6 w-6" />}
-            title="No bills for this month"
-            description="Generate monthly dues to create bills for all eligible active members."
+            title="No bills found"
+            description="Billing periods are created automatically from each member's joining date and plan."
           />
         )}
       </Panel>
@@ -311,43 +292,6 @@ export function PaymentsPage() {
           </div>
         </div>
       ) : null}
-
-      <AdminModal
-        open={generateOpen}
-        onClose={() => setGenerateOpen(false)}
-        title={`Generate dues · ${formatMonth(month)}`}
-        description="Creates the next bill for each active member from their plan period (no proration). Existing bills are never overwritten or duplicated."
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="label-telemetry mb-1.5 block">Payment due date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(event) => setDueDate(event.target.value)}
-              className="w-full rounded-md border border-hairline bg-canvas px-3 py-2 font-body text-sm text-white outline-none focus:border-accent"
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setGenerateOpen(false)}
-              className="rounded-md border border-hairline px-4 py-2.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={generating}
-              onClick={runGenerate}
-              className="inline-flex items-center gap-2 rounded-md border border-accent bg-accent px-4 py-2.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-canvas transition-colors hover:bg-accent/90 disabled:opacity-60"
-            >
-              {generating ? <Spinner className="text-canvas" /> : null}
-              Generate bills
-            </button>
-          </div>
-        </div>
-      </AdminModal>
 
       <PaymentDetailModal
         paymentId={paymentId}

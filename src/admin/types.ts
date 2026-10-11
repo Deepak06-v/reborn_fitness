@@ -1,7 +1,7 @@
 export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other'
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overdue'
-export type PaymentFilterStatus = PaymentStatus | 'upcoming' | 'due_soon'
-export type DueState = 'paid' | 'upcoming' | 'due_soon' | 'overdue'
+export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
+export type PaymentFilterStatus = DueState
 export type MemberStatus = 'active' | 'inactive'
 export type AdminRole = 'admin' | 'superadmin'
 
@@ -123,7 +123,7 @@ export interface PaymentListItem extends Payment {
 }
 
 export interface PaymentListResponse {
-  month: string
+  month: string | null
   items: PaymentListItem[]
   total: number
   page: number
@@ -152,14 +152,6 @@ export interface MemberDetailResponse {
 export interface PaymentDetailResponse {
   payment: Payment
   member: Member | null
-}
-
-export interface GenerateMonthSummary {
-  billingMonth: string
-  dueDate: string
-  eligible: number
-  created: number
-  existing: number
 }
 
 export interface RecentPayment {
