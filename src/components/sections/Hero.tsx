@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, ArrowRight, Radio, Snowflake, Waves } from 'lucide-react'
+import { Activity, Radio, Snowflake, Waves } from 'lucide-react'
 import { brand } from '../../data/site'
 import { useScrollTo } from '../../hooks/useScrollTo'
 import { LinkButton } from '../ui/Button'
@@ -130,18 +130,6 @@ export function Hero({ preloaderDone = true }: HeroProps) {
             delay={0.16}
             className="flex flex-col gap-3 sm:flex-row sm:items-center"
           >
-            <LinkButton
-              href="#trial-pass"
-              size="lg"
-              onClick={(event) => {
-                event.preventDefault()
-                scrollTo('#trial-pass')
-              }}
-            >
-              Claim 1-Day VIP Pass
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </LinkButton>
-
             <LinkButton
               href="#facilities"
               size="lg"

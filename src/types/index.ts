@@ -3,39 +3,6 @@ export interface NavLink {
   href: string
 }
 
-export interface GoalOption {
-  id: string
-  label: string
-}
-
-export interface DaySlot {
-  id: string
-  label: string
-  detail: string
-}
-
-export interface BookingSelection {
-  goalId: string
-  dayId: string
-  slotId: string
-  name: string
-  phone: string
-  email: string
-  wantsCoach: boolean
-  coachId: string | null
-}
-
-export interface IssuedPass {
-  bookingRef: string
-  entryCode: string
-  issuedAt: Date
-  dayLabel: string
-  slotLabel: string
-  goalLabel: string
-  guestName: string
-  coachName: string | null
-}
-
 export interface Plan {
   id: string
   name: string
@@ -52,20 +19,6 @@ export interface Plan {
   blurb: string
   featured: boolean
   features: string[]
-}
-
-export interface Product {
-  id: string
-  name: string
-  description: string
-  price: number
-  image: string
-  limited: boolean
-}
-
-export interface CartItem {
-  productId: string
-  quantity: number
 }
 
 export interface Coach {

@@ -6,7 +6,7 @@ export function Footer() {
   const scrollTo = useScrollTo()
 
   return (
-    <footer className="border-t border-hairline bg-surface/40 pb-[calc(var(--bar-h)+2rem)] pt-14 lg:pb-14">
+    <footer className="border-t border-hairline bg-surface/40 pb-14 pt-14">
       <div className="section-shell flex flex-col gap-10">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-sm">

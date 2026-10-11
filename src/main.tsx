@@ -4,7 +4,6 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AdminApp } from './admin/AdminApp'
 import { ScrollProvider } from './providers/ScrollProvider'
-import { CartProvider } from './context/CartContext'
 import './styles/globals.css'
 
 const isAdminRoute = window.location.pathname.startsWith('/admin')
@@ -17,9 +16,7 @@ createRoot(document.getElementById('root')!).render(
       </BrowserRouter>
     ) : (
       <ScrollProvider>
-        <CartProvider>
-          <App />
-        </CartProvider>
+        <App />
       </ScrollProvider>
     )}
   </StrictMode>,

@@ -26,7 +26,6 @@ export const brand = {
   emailDisplay: 'Chandankumar143chandu@gmail.com',
   emailHref: 'mailto:Chandankumar143chandu@gmail.com',
   hoursLabel: 'OPEN NOW — 24/7 ACCESS',
-  dayPassCta: 'BOOK 1-DAY VIP PASS',
 } as const
 
 /** The real trainer / point of contact for the gym. */
@@ -48,10 +47,8 @@ export const social = {
 } as const
 
 export const navLinks: NavLink[] = [
-  { label: 'Trial Pass', href: '#trial-pass' },
   { label: 'Facilities', href: '#facilities' },
   { label: '3D Tour', href: '#gym-tour' },
   { label: 'Memberships', href: '#memberships' },
-  { label: 'Shop', href: '#shop' },
   { label: 'Location', href: '#location' },
 ]

@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import type Lenis from 'lenis'
-import { Menu, ShoppingBag } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { brand, navLinks } from '../../data/site'
 import { useScroll } from '../../context/ScrollContext'
-import { useCart } from '../../hooks/useCart'
 import { useScrollTo } from '../../hooks/useScrollTo'
-import { LinkButton } from '../ui/Button'
 
 interface HeaderProps {
   onOpenMenu: () => void
@@ -16,7 +14,6 @@ export function Header({ onOpenMenu }: HeaderProps) {
   const [lenis] = useScroll()
   const [condensed, setCondensed] = useState(false)
   const [active, setActive] = useState<string>(navLinks[0].href)
-  const { count, openCart } = useCart()
   const scrollTo = useScrollTo()
 
   useEffect(() => {
@@ -104,32 +101,6 @@ export function Header({ onOpenMenu }: HeaderProps) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCart}
-            aria-label={`Open cart, ${count} item${count === 1 ? '' : 's'}`}
-            className="relative flex h-11 w-11 items-center justify-center rounded-md border border-hairline text-white transition-colors hover:border-accent"
-          >
-            <ShoppingBag className="h-5 w-5" aria-hidden="true" />
-            {count > 0 ? (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-sm bg-accent px-1 font-mono text-[0.625rem] font-semibold text-canvas">
-                {count}
-              </span>
-            ) : null}
-          </button>
-
-          <LinkButton
-            href="#trial-pass"
-            size="sm"
-            className="hidden md:inline-flex"
-            onClick={(event) => {
-              event.preventDefault()
-              scrollTo('#trial-pass')
-            }}
-          >
-            BOOK DAY PASS
-          </LinkButton>
-
           <button
             type="button"
             onClick={onOpenMenu}

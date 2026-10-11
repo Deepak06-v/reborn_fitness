@@ -1,6 +1,6 @@
 # REBORN FITNESS
 
-Mobile-first, motion-driven marketing and booking site for a 24/7 biometric
+Mobile-first, motion-driven marketing site for a 24/7 biometric
 performance gym — plus a private admin console for running the business
 (members, monthly fees, payments and finances).
 
@@ -17,7 +17,7 @@ in [`server/`](./server).
 - **react-router-dom** for the `/admin` console
 - **Vite 5** build with manual vendor chunks
 - **Tailwind CSS 3** driven by RGB-channel tokens (`rgb(var(--color-x) / <alpha-value>)`)
-- **GSAP 3** + `ScrollTrigger`, **Lenis**, **lucide-react**, **react-qr-code**
+- **GSAP 3** + `ScrollTrigger`, **Lenis**, **lucide-react**
 
 **Backend** (`server/`)
 
@@ -280,7 +280,7 @@ Fonts: **Space Grotesk** (display), **Inter** (body), **JetBrains Mono** (teleme
 
 - Scroll locking falls back to `body { overflow: hidden }` when reduced motion
   disables Lenis
-- Drawers, the pass modal and admin dialogs expose `role="dialog"`, `aria-modal`,
+- Drawers and admin dialogs expose `role="dialog"`, `aria-modal`,
   Escape to close, initial focus, and focus restoration
 - `prefers-reduced-motion: reduce` skips all GSAP tweens
 - Skip link, live-region telemetry labels, visible focus rings

@@ -1,16 +1,12 @@
-import { ArrowUpRight, Instagram } from 'lucide-react'
+import { Instagram } from 'lucide-react'
 import { coaches } from '../../data/coaches'
 import { social } from '../../data/site'
-import { Button, LinkButton } from '../ui/Button'
+import { LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { SectionHeading } from '../ui/SectionHeading'
 import { ScrollReveal } from '../animations/ScrollReveal'
 
-interface CoachesProps {
-  onBookWithCoach: (coachId: string) => void
-}
-
-export function Coaches({ onBookWithCoach }: CoachesProps) {
+export function Coaches() {
   return (
     <section className="py-20 sm:py-28">
       <div className="section-shell">
@@ -75,14 +71,6 @@ export function Coaches({ onBookWithCoach }: CoachesProps) {
                   ) : null}
 
                   <div className="mt-auto flex flex-col gap-2 pt-6 sm:flex-row">
-                    <Button
-                      variant="primary"
-                      fullWidth
-                      onClick={() => onBookWithCoach(coach.id)}
-                    >
-                      Book a session
-                      <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Button>
                     <LinkButton
                       href={social.instagram.url}
                       target="_blank"
