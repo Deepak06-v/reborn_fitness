@@ -8,10 +8,10 @@ import { useScroll } from '../../context/ScrollContext'
 import { useScrollTo } from '../../hooks/useScrollTo'
 
 interface HeaderProps {
-  onOpenMenu: () => void
+  onOpenMenu?: () => void
 }
 
-export function Header({ onOpenMenu }: HeaderProps) {
+export function Header({ onOpenMenu = () => {} }: HeaderProps) {
   const [lenis] = useScroll()
   const [condensed, setCondensed] = useState(false)
   const [active, setActive] = useState<string>(navLinks[0].href)

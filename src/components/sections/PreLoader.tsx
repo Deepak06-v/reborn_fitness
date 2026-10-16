@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 
 interface PreLoaderProps {
-  onComplete: () => void
+  onComplete?: () => void
 }
 
 /**
@@ -40,7 +40,7 @@ function prefersReducedMotion(): boolean {
  * grace period and will never cut off a video that is still actively
  * playing. Reduced-motion visitors skip the intro immediately.
  */
-export function PreLoader({ onComplete }: PreLoaderProps) {
+export function PreLoader({ onComplete = () => {} }: PreLoaderProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [visible, setVisible] = useState(true)
