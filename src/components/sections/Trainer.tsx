@@ -190,7 +190,7 @@ export function Trainer() {
                     src={coach.image}
                     alt={coach.name}
                     loading="lazy"
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className="absolute inset-0 h-full w-full object-contain"
                   />
                 ) : (
                   <span className="flex flex-col items-center gap-2 p-4 text-center">
@@ -242,7 +242,7 @@ export function Trainer() {
               onFocus={() => setIsPaused(true)}
               onBlur={() => setIsPaused(false)}
             >
-              <div className="relative aspect-[3/2] w-full overflow-hidden bg-black sm:aspect-[16/9] lg:aspect-[3/2]">
+              <div className="relative aspect-[4/3] w-full overflow-hidden bg-black sm:aspect-[16/10] lg:aspect-[16/9]">
                 <div ref={trackRef} className="flex h-full w-full will-change-transform">
                   {mediaItems.map((item, index) => (
                     <div
@@ -257,7 +257,7 @@ export function Trainer() {
                           playsInline
                           loop
                           autoPlay={!reduced}
-                          className="absolute inset-0 h-full w-full object-cover"
+                          className="absolute inset-0 h-full w-full object-contain"
                           ref={(el) => {
                             if (!el) return
                             if (index === activeIndex && !reduced) {
@@ -273,7 +273,7 @@ export function Trainer() {
                           alt={item.alt}
                           loading={index < 2 ? 'eager' : 'lazy'}
                           decoding="async"
-                          className="absolute inset-0 h-full w-full object-cover"
+                          className="absolute inset-0 h-full w-full object-contain"
                           style={item.focalPoint ? { objectPosition: item.focalPoint } : undefined}
                         />
                       )}
