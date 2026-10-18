@@ -8,17 +8,21 @@ import { MemberFormModal } from '../components/MemberFormModal'
 import {
   DueBadge,
   EmptyState,
+  IncompleteBadge,
   MemberStatusBadge,
   PageHeader,
   Panel,
   Spinner,
 } from '../components/ui'
 import { useToast } from '../components/useToast'
+import { useAdminAuth } from '../auth/useAdminAuth'
 
 const statusFilters: { value: string; label: string }[] = [
   { value: '', label: 'All payment states' },
-  { value: 'paid', label: 'Paid' },
+  { value: 'urgent', label: 'Urgent (≤ 2 days / overdue)' },
+  { value: 'this_week', label: 'This week (3–7 days)' },
   { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
   { value: 'due_soon', label: 'Due soon' },
   { value: 'overdue', label: 'Overdue' },
 ]
@@ -83,20 +87,43 @@ export function MembersPage() {
     void load()
   }, [load])
 
-  const toggleStatus = async (member: Member) => {
-    const next = member.status === 'active' ? 'inactive' : 'active'
-    const confirmed = window.confirm(
-      next === 'inactive'
-        ? `Deactivate ${member.fullName}? Their history is preserved.`
-        : `Reactivate ${member.fullName}?`,
-    )
-    if (!confirmed) return
+  const { isOwner } = useAdminAuth()
+  const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null)
+  const [confirmTimer, setConfirmTimer] = useState<number | null>(null)
+
+  const handleToggleStatus = async (member: Member) => {
+    if (!isOwner) {
+      notify('Owner authorization required to change member status', 'error')
+      return
+    }
+    if (member.status === 'active') {
+      if (confirmTimer) window.clearTimeout(confirmTimer)
+      setConfirmDeactivateId(member.id)
+      const timer = window.setTimeout(() => {
+        setConfirmDeactivateId(null)
+      }, 5000)
+      setConfirmTimer(timer)
+      return
+    }
+
     try {
-      await adminApi.members.setStatus(member.id, next)
-      notify(`Member ${next === 'active' ? 'activated' : 'deactivated'}`, 'success')
+      await adminApi.members.setStatus(member.id, 'active')
+      notify('Member activated', 'success')
       await load()
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Unable to update member', 'error')
+      notify(err instanceof Error ? err.message : 'Unable to activate member', 'error')
+    }
+  }
+
+  const handleDeactivateConfirm = async (member: Member) => {
+    if (confirmTimer) window.clearTimeout(confirmTimer)
+    setConfirmDeactivateId(null)
+    try {
+      await adminApi.members.setStatus(member.id, 'inactive')
+      notify('Member deactivated', 'success')
+      await load()
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Unable to deactivate member', 'error')
     }
   }
 
@@ -227,12 +254,15 @@ export function MembersPage() {
                     className="border-b border-hairline/60 transition-colors last:border-0 hover:bg-white/[0.02]"
                   >
                     <td className="px-4 py-3">
-                      <Link
-                        to={`/admin/members/${member.id}`}
-                        className="font-body text-sm text-white hover:text-accent"
-                      >
-                        {member.fullName}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          to={`/admin/members/${member.id}`}
+                          className="font-body text-sm text-white hover:text-accent"
+                        >
+                          {member.fullName}
+                        </Link>
+                        {member.incomplete ? <IncompleteBadge /> : null}
+                      </div>
                       <p className="font-mono text-[0.625rem] uppercase tracking-[0.12em] text-dim">
                         {member.memberId}
                         {member.membershipType ? ` · ${member.membershipType}` : ''}
@@ -250,7 +280,11 @@ export function MembersPage() {
                     <td className="px-4 py-3">
                       {member.currentMonthPayment ? (
                         <div className="flex flex-col gap-1">
-                          <DueBadge state={member.currentMonthPayment.dueState} />
+                          <DueBadge
+                            state={member.currentMonthPayment.dueState}
+                            label={member.currentMonthPayment.statusLabel}
+                            tone={member.currentMonthPayment.statusTone}
+                          />
                           {member.currentMonthPayment.balancePaise > 0 ? (
                             <span className="font-mono text-[0.625rem] text-dim">
                               {formatPaise(member.currentMonthPayment.balancePaise)} due
@@ -288,22 +322,33 @@ export function MembersPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleStatus(member)}
-                          aria-label={
-                            member.status === 'active'
-                              ? `Deactivate ${member.fullName}`
-                              : `Activate ${member.fullName}`
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white"
-                        >
-                          {member.status === 'active' ? (
-                            <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />
-                          ) : (
-                            <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                          )}
-                        </button>
+                        {confirmDeactivateId === member.id ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeactivateConfirm(member)}
+                            className="rounded-md border border-red-500 bg-red-500/20 px-2 py-1 font-mono text-[0.625rem] uppercase tracking-wider text-red-200 transition-colors hover:bg-red-500/30"
+                            title="Click again within 5s to confirm deactivation"
+                          >
+                            Confirm?
+                          </button>
+                        ) : isOwner ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(member)}
+                            aria-label={
+                              member.status === 'active'
+                                ? `Deactivate ${member.fullName}`
+                                : `Activate ${member.fullName}`
+                            }
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline text-muted transition-colors hover:border-accent/40 hover:text-white"
+                          >
+                            {member.status === 'active' ? (
+                              <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />
+                            ) : (
+                              <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                            )}
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

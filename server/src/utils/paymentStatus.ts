@@ -1,34 +1,41 @@
 export type BasePaymentStatus = 'unpaid' | 'partial' | 'paid'
 export type PaymentStatus = BasePaymentStatus | 'overdue'
-/** Filter values are the live, colour-coded due states of a bill. */
-export type PaymentFilterStatus = DueState
 
 /**
- * Stored status (persisted) intentionally omits "overdue" because overdue
- * depends on the current time and would otherwise go stale. It is derived
- * live from the due date and the outstanding balance.
+ * Visual tone mapping:
+ * - danger: Red (overdue, due today, or due in 1–2 days)
+ * - accent: Yellow (due in 3–7 days)
+ * - neutral: Grey (unpaid, >7 days left)
+ * - lime: Green (fully paid)
  */
-export function deriveBaseStatus(
-  dueAmountPaise: number,
-  amountPaidPaise: number,
-): BasePaymentStatus {
-  if (amountPaidPaise >= dueAmountPaise) return 'paid'
-  if (amountPaidPaise > 0) return 'partial'
-  return 'unpaid'
+export type DueTone = 'danger' | 'accent' | 'neutral' | 'lime'
+export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
+export type PaymentFilterStatus = 'all' | 'paid' | 'unpaid' | 'urgent' | 'due_soon' | 'overdue' | 'this_week'
+
+export const DUE_SOON_DAYS = 7
+
+export function istDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
 }
 
-export function deriveStatus(
-  dueAmountPaise: number,
-  amountPaidPaise: number,
-  dueDate: Date,
-  now: Date = new Date(),
-): PaymentStatus {
-  const balance = dueAmountPaise - amountPaidPaise
-  if (balance <= 0) return 'paid'
-  // Compare whole IST calendar days so a bill due "today" is not yet overdue.
-  if (istDay(dueDate) < istDay(now)) return 'overdue'
-  if (amountPaidPaise > 0) return 'partial'
-  return 'unpaid'
+/**
+ * Calculates whole calendar-day difference between targetDate (periodEnd) and nowDate in Asia/Kolkata:
+ * targetDate - nowDate
+ * e.g. target tomorrow -> +1
+ *      target today -> 0
+ *      target yesterday -> -1
+ */
+export function calendarDaysDifference(targetDate: Date, nowDate: Date = new Date()): number {
+  const targetDay = istDay(targetDate)
+  const today = istDay(nowDate)
+  const targetTime = new Date(`${targetDay}T00:00:00+05:30`).getTime()
+  const todayTime = new Date(`${today}T00:00:00+05:30`).getTime()
+  return Math.round((targetTime - todayTime) / 86_400_000)
 }
 
 export function outstandingBalance(
@@ -38,41 +45,141 @@ export function outstandingBalance(
   return Math.max(dueAmountPaise - amountPaidPaise, 0)
 }
 
-/**
- * Colour-coded payment state used by the admin UI:
- *   - paid      -> green  (nothing outstanding)
- *   - unpaid    -> yellow (outstanding, due date is more than 7 days away)
- *   - due_soon  -> red    (outstanding, due today or within the next 7 days)
- *   - overdue   -> red    (outstanding, due date already passed)
- *
- * Comparison is done on whole IST calendar days so that a bill due "today" is
- * reported as due_soon rather than overdue.
- */
-export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
+export function deriveBaseStatus(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+): BasePaymentStatus {
+  if (amountPaidPaise >= dueAmountPaise) return 'paid'
+  if (amountPaidPaise > 0) return 'partial'
+  return 'unpaid'
+}
 
-export const DUE_SOON_DAYS = 7
+export interface PaymentStatusDetails {
+  status: PaymentStatus
+  dueState: DueState
+  tone: DueTone
+  label: string
+  daysLeft: number
+  sortGroup: 1 | 2 | 3 | 4
+}
 
-function istDay(date: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date)
+export function evaluatePaymentStatus(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+  periodEndDate: Date,
+  now: Date = new Date(),
+): PaymentStatusDetails {
+  const balance = dueAmountPaise - amountPaidPaise
+  const daysLeft = calendarDaysDifference(periodEndDate, now)
+
+  if (balance <= 0) {
+    return {
+      status: 'paid',
+      dueState: 'paid',
+      tone: 'lime',
+      label: 'Paid',
+      daysLeft,
+      sortGroup: 4,
+    }
+  }
+
+  if (daysLeft < 0) {
+    const overdueDays = Math.abs(daysLeft)
+    return {
+      status: 'overdue',
+      dueState: 'overdue',
+      tone: 'danger',
+      label: `Overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}`,
+      daysLeft,
+      sortGroup: 1,
+    }
+  }
+
+  if (daysLeft === 0) {
+    return {
+      status: amountPaidPaise > 0 ? 'partial' : 'unpaid',
+      dueState: 'due_soon',
+      tone: 'danger',
+      label: 'Due today',
+      daysLeft,
+      sortGroup: 1,
+    }
+  }
+
+  if (daysLeft <= 2) {
+    return {
+      status: amountPaidPaise > 0 ? 'partial' : 'unpaid',
+      dueState: 'due_soon',
+      tone: 'danger',
+      label: `Due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
+      daysLeft,
+      sortGroup: 1,
+    }
+  }
+
+  if (daysLeft <= 7) {
+    return {
+      status: amountPaidPaise > 0 ? 'partial' : 'unpaid',
+      dueState: 'due_soon',
+      tone: 'accent',
+      label: `Due in ${daysLeft} days`,
+      daysLeft,
+      sortGroup: 2,
+    }
+  }
+
+  return {
+    status: amountPaidPaise > 0 ? 'partial' : 'unpaid',
+    dueState: 'unpaid',
+    tone: 'neutral',
+    label: 'Unpaid',
+    daysLeft,
+    sortGroup: 3,
+  }
+}
+
+export function deriveStatus(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+  periodEndDate: Date,
+  now: Date = new Date(),
+): PaymentStatus {
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).status
 }
 
 export function deriveDueState(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  dueDate: Date,
+  periodEndDate: Date,
   now: Date = new Date(),
 ): DueState {
-  if (dueAmountPaise - amountPaidPaise <= 0) return 'paid'
-
-  const dueDay = istDay(dueDate)
-  const today = istDay(now)
-  if (dueDay < today) return 'overdue'
-
-  const soonLimit = istDay(new Date(now.getTime() + DUE_SOON_DAYS * 86_400_000))
-  return dueDay <= soonLimit ? 'due_soon' : 'unpaid'
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).dueState
 }
+
+export function deriveDueTone(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+  periodEndDate: Date,
+  now: Date = new Date(),
+): DueTone {
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).tone
+}
+
+export function deriveStatusLabel(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+  periodEndDate: Date,
+  now: Date = new Date(),
+): string {
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).label
+}
+
+export function deriveSortGroup(
+  dueAmountPaise: number,
+  amountPaidPaise: number,
+  periodEndDate: Date,
+  now: Date = new Date(),
+): 1 | 2 | 3 | 4 {
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).sortGroup
+}
+

@@ -8,6 +8,7 @@ import { MemberFormModal } from '../components/MemberFormModal'
 import { PaymentDetailModal } from '../components/PaymentDetailModal'
 import {
   DueBadge,
+  IncompleteBadge,
   MemberStatusBadge,
   PageHeader,
   Panel,
@@ -15,6 +16,7 @@ import {
   StatCard,
 } from '../components/ui'
 import { useToast } from '../components/useToast'
+import { useAdminAuth } from '../auth/useAdminAuth'
 
 export function MemberDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -42,24 +44,45 @@ export function MemberDetailsPage() {
     void load()
   }, [load])
 
-  const toggleStatus = async () => {
+  const { isOwner } = useAdminAuth()
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const [confirmTimer, setConfirmTimer] = useState<number | null>(null)
+
+  const handleToggleStatus = async () => {
     if (!data) return
-    const next = data.member.status === 'active' ? 'inactive' : 'active'
-    if (
-      !window.confirm(
-        next === 'inactive'
-          ? `Deactivate ${data.member.fullName}? Their history is preserved.`
-          : `Reactivate ${data.member.fullName}?`,
-      )
-    ) {
+    if (!isOwner) {
+      notify('Owner authorization required to change member status', 'error')
       return
     }
+    if (data.member.status === 'active') {
+      if (confirmTimer) window.clearTimeout(confirmTimer)
+      setConfirmDeactivate(true)
+      const timer = window.setTimeout(() => {
+        setConfirmDeactivate(false)
+      }, 5000)
+      setConfirmTimer(timer)
+      return
+    }
+
     try {
-      await adminApi.members.setStatus(data.member.id, next)
-      notify(`Member ${next === 'active' ? 'activated' : 'deactivated'}`, 'success')
+      await adminApi.members.setStatus(data.member.id, 'active')
+      notify('Member activated', 'success')
       await load()
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Unable to update member', 'error')
+      notify(err instanceof Error ? err.message : 'Unable to activate member', 'error')
+    }
+  }
+
+  const handleDeactivateConfirm = async () => {
+    if (!data) return
+    if (confirmTimer) window.clearTimeout(confirmTimer)
+    setConfirmDeactivate(false)
+    try {
+      await adminApi.members.setStatus(data.member.id, 'inactive')
+      notify('Member deactivated', 'success')
+      await load()
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Unable to deactivate member', 'error')
     }
   }
 
@@ -109,6 +132,7 @@ export function MemberDetailsPage() {
         description={member.membershipType ?? undefined}
         actions={
           <>
+            {member.incomplete ? <IncompleteBadge /> : null}
             <MemberStatusBadge status={member.status} />
             <button
               type="button"
@@ -118,18 +142,29 @@ export function MemberDetailsPage() {
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
               Edit
             </button>
-            <button
-              type="button"
-              onClick={toggleStatus}
-              className="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
-            >
-              {member.status === 'active' ? (
-                <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : (
-                <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {member.status === 'active' ? 'Deactivate' : 'Activate'}
-            </button>
+            {confirmDeactivate ? (
+              <button
+                type="button"
+                onClick={handleDeactivateConfirm}
+                className="inline-flex items-center gap-2 rounded-md border border-red-500 bg-red-500/20 px-3 py-2 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-red-200 transition-colors hover:bg-red-500/30"
+                title="Click again within 5s to confirm deactivation"
+              >
+                Click again to confirm
+              </button>
+            ) : isOwner ? (
+              <button
+                type="button"
+                onClick={handleToggleStatus}
+                className="inline-flex items-center gap-2 rounded-md border border-hairline px-3 py-2 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-muted transition-colors hover:border-accent/40 hover:text-white"
+              >
+                {member.status === 'active' ? (
+                  <UserMinus className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {member.status === 'active' ? 'Deactivate' : 'Activate'}
+              </button>
+            ) : null}
           </>
         }
       />
@@ -238,7 +273,11 @@ export function MemberDetailsPage() {
                           {formatPaise(payment.balancePaise)}
                         </td>
                         <td className="px-4 py-3">
-                          <DueBadge state={payment.dueState} />
+                          <DueBadge
+                            state={payment.dueState}
+                            label={payment.statusLabel}
+                            tone={payment.statusTone}
+                          />
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button

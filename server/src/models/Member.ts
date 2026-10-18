@@ -24,6 +24,8 @@ export interface MemberDoc extends Document<Types.ObjectId> {
   joiningDate: Date
   monthlyFeePaise: number
   status: MemberStatus
+  archivedAt?: Date | null
+  archivedBy?: Types.ObjectId | null
   createdAt: Date
   updatedAt: Date
 }
@@ -62,6 +64,8 @@ const memberSchema = new Schema<MemberDoc, MemberModel>(
       default: 'active',
       index: true,
     },
+    archivedAt: { type: Date, default: null },
+    archivedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
   },
   { timestamps: true, versionKey: false },
 )

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { dueStateLabel, dueStateTone, paymentStatusLabel, paymentStatusTone } from '../format'
-import type { DueState, MemberStatus, PaymentStatus } from '../types'
+import type { DueState, DueTone, MemberStatus, PaymentStatus } from '../types'
 
 export function Spinner({ className }: { className?: string }) {
   return (
@@ -109,22 +109,44 @@ export function StatusBadge({ status }: { status: PaymentStatus }) {
 }
 
 /**
- * Bill state badge: green = paid, yellow = unpaid, red = due soon / overdue.
+ * Bill state badge: displays status text and tone.
  */
-export function DueBadge({ state }: { state: DueState }) {
-  const tones = {
+export function DueBadge({
+  state,
+  label,
+  tone,
+}: {
+  state?: DueState
+  label?: string
+  tone?: DueTone
+}) {
+  const tones: Record<DueTone, string> = {
     lime: 'border-lime/40 bg-lime/10 text-lime',
     accent: 'border-accent/40 bg-accent/10 text-accent',
+    neutral: 'border-hairline bg-white/5 text-muted',
     danger: 'border-red-500/40 bg-red-500/10 text-red-300',
   }
+  const resolvedTone: DueTone = tone ?? (state ? dueStateTone[state] : 'neutral')
+  const resolvedLabel = label ?? (state ? dueStateLabel[state] : '—')
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full border px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em]',
-        tones[dueStateTone[state]],
+        tones[resolvedTone],
       )}
     >
-      {dueStateLabel[state]}
+      {resolvedLabel}
+    </span>
+  )
+}
+
+export function IncompleteBadge({ label = 'Incomplete' }: { label?: string }) {
+  return (
+    <span
+      title="Missing joining date or plan. Please edit to complete this record."
+      className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-amber-300"
+    >
+      {label}
     </span>
   )
 }

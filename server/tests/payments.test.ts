@@ -225,11 +225,11 @@ describe('payment recording', () => {
 
   it('colour-codes due state as unpaid, due_soon and overdue', async () => {
     const unpaid = await addMember({ phone: '9000000101', joiningDate: istDay(10) })
-    const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(1) })
+    const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(-26) })
     const overdue = await addMember({ phone: '9000000103', joiningDate: istDay(-40) })
 
     const futureBill = await findPayment(unpaid.memberId, istDay(10).slice(0, 7))
-    const soonBill = await findPayment(dueSoon.memberId, istDay(1).slice(0, 7))
+    const soonBill = await findPayment(dueSoon.memberId, istDay(-26).slice(0, 7))
     const pastBill = await findPayment(overdue.memberId, istDay(-40).slice(0, 7))
 
     expect(futureBill.dueState).toBe('unpaid')
@@ -284,6 +284,47 @@ describe('payment corrections', () => {
       .set('x-csrf-token', session.csrf)
       .send({ entryId, reason: 'Double correction attempt' })
       .expect(409)
+  })
+
+  it('forbids staff from voiding payment entries (403)', async () => {
+    await createAdmin('staff_pay', 'staff-pass-123', 'staff')
+    const member = await addMember({ joiningDate: istDay(-30) })
+    const bill = await findPayment(member.memberId, istDay(-30).slice(0, 7))
+    const recorded = await record(bill.id, { amountPaise: 50000 })
+    const entryId = (recorded.paymentEntries as { id: string }[])[0].id
+
+    const { agent: staffAgent, csrf: staffCsrf } = await loginAgent(
+      app,
+      'staff_pay',
+      'staff-pass-123',
+    )
+    const res = await staffAgent
+      .post(`/api/admin/payments/${bill.id}/corrections`)
+      .set('x-csrf-token', staffCsrf)
+      .send({ entryId, reason: 'Mistake' })
+      .expect(403)
+    expect(res.body.error.message).toMatch(/Owner authorization required/)
+  })
+
+  it('forbids admin (Staff) role from voiding payment entries (403)', async () => {
+    // KEY TEST: 'admin' role must be Staff, not Owner. Before the fix, 'admin' could void payments.
+    await createAdmin('admin_pay', 'admin-pass-123', 'admin')
+    const member = await addMember({ joiningDate: istDay(-30) })
+    const bill = await findPayment(member.memberId, istDay(-30).slice(0, 7))
+    const recorded = await record(bill.id, { amountPaise: 50000 })
+    const entryId = (recorded.paymentEntries as { id: string }[])[0].id
+
+    const { agent: adminAgent, csrf: adminCsrf } = await loginAgent(
+      app,
+      'admin_pay',
+      'admin-pass-123',
+    )
+    const res = await adminAgent
+      .post(`/api/admin/payments/${bill.id}/corrections`)
+      .set('x-csrf-token', adminCsrf)
+      .send({ entryId, reason: 'Mistake' })
+      .expect(403)
+    expect(res.body.error.message).toMatch(/Owner authorization required/)
   })
 })
 

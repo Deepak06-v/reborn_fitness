@@ -5,8 +5,7 @@ import { getPlan } from '../config/plans'
 import { ApiError } from '../utils/errors'
 import { addMonthsClamped, currentMonth } from '../utils/month'
 import {
-  deriveDueState,
-  deriveStatus,
+  evaluatePaymentStatus,
   outstandingBalance,
   type PaymentFilterStatus,
 } from '../utils/paymentStatus'
@@ -61,7 +60,7 @@ function sortSpec(sort?: string): Record<string, SortOrder> {
 export async function createMember(input: MemberInput): Promise<MemberDoc> {
   const phone = normalizePhone(input.phone)
   if (!isValidPhone(phone)) {
-    throw ApiError.unprocessable('Phone number must contain 10 to 12 digits', [
+    throw ApiError.unprocessable('Phone number must contain exactly 10 digits', [
       { path: 'phone', message: 'Invalid phone number' },
     ])
   }
@@ -118,7 +117,7 @@ export async function updateMember(
   if (patch.phone !== undefined) {
     const phone = normalizePhone(patch.phone)
     if (!isValidPhone(phone)) {
-      throw ApiError.unprocessable('Phone number must contain 10 to 12 digits', [
+      throw ApiError.unprocessable('Phone number must contain exactly 10 digits', [
         { path: 'phone', message: 'Invalid phone number' },
       ])
     }
@@ -171,9 +170,19 @@ export async function getMemberOrThrow(id: string): Promise<MemberDoc> {
 export async function setMemberStatus(
   id: string,
   status: 'active' | 'inactive',
+  adminId?: string,
 ): Promise<MemberDoc> {
   const member = await getMemberOrThrow(id)
   member.status = status
+  if (status === 'inactive') {
+    member.archivedAt = new Date()
+    if (adminId && Types.ObjectId.isValid(adminId)) {
+      member.archivedBy = new Types.ObjectId(adminId)
+    }
+  } else {
+    member.archivedAt = null
+    member.archivedBy = null
+  }
   await member.save()
   return member
 }
@@ -238,30 +247,34 @@ export async function listMembers(params: ListMembersParams) {
       ...serializeMember(member),
       currentMonth: selectedMonth,
       currentMonthPayment: payment
-        ? {
-            id: payment._id.toString(),
-            invoiceNumber: payment.invoiceNumber,
-            planName: payment.planName,
-            periodStart: payment.periodStart ? payment.periodStart.toISOString() : null,
-            periodEnd: payment.periodEnd ? payment.periodEnd.toISOString() : null,
-            dueAmountPaise: payment.dueAmountPaise,
-            amountPaidPaise: payment.amountPaidPaise,
-            balancePaise: outstandingBalance(
+        ? (() => {
+            const effectiveEnd = payment.periodEnd ?? payment.dueDate
+            const evalResult = evaluatePaymentStatus(
               payment.dueAmountPaise,
               payment.amountPaidPaise,
-            ),
-            dueDate: payment.dueDate.toISOString(),
-            status: deriveStatus(
-              payment.dueAmountPaise,
-              payment.amountPaidPaise,
-              payment.dueDate,
-            ),
-            dueState: deriveDueState(
-              payment.dueAmountPaise,
-              payment.amountPaidPaise,
-              payment.dueDate,
-            ),
-          }
+              effectiveEnd,
+            )
+            return {
+              id: payment._id.toString(),
+              invoiceNumber: payment.invoiceNumber,
+              planName: payment.planName,
+              periodStart: payment.periodStart ? payment.periodStart.toISOString() : null,
+              periodEnd: payment.periodEnd ? payment.periodEnd.toISOString() : null,
+              dueAmountPaise: payment.dueAmountPaise,
+              amountPaidPaise: payment.amountPaidPaise,
+              balancePaise: outstandingBalance(
+                payment.dueAmountPaise,
+                payment.amountPaidPaise,
+              ),
+              dueDate: payment.dueDate.toISOString(),
+              status: evalResult.status,
+              dueState: evalResult.dueState,
+              statusTone: evalResult.tone,
+              statusLabel: evalResult.label,
+              daysLeft: evalResult.daysLeft,
+              sortGroup: evalResult.sortGroup,
+            }
+          })()
         : null,
       outstandingPaise,
     }

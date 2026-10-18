@@ -3,7 +3,8 @@ export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overdue'
 export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
 export type PaymentFilterStatus = DueState
 export type MemberStatus = 'active' | 'inactive'
-export type AdminRole = 'admin' | 'superadmin'
+export type AdminRole = 'admin' | 'superadmin' | 'owner' | 'staff'
+export type DueTone = 'lime' | 'accent' | 'danger' | 'neutral'
 
 export interface Plan {
   id: string
@@ -39,6 +40,7 @@ export interface Member {
   monthlyFeePaise: number
   monthlyFee: number
   status: MemberStatus
+  incomplete?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -55,6 +57,10 @@ export interface CurrentMonthPayment {
   dueDate: string
   status: PaymentStatus
   dueState: DueState
+  statusTone?: DueTone
+  statusLabel?: string
+  daysLeft?: number | null
+  sortGroup?: number
 }
 
 export interface MemberListItem extends Member {
@@ -111,6 +117,10 @@ export interface Payment {
   dueDate: string
   status: PaymentStatus
   dueState: DueState
+  statusTone?: DueTone
+  statusLabel?: string
+  daysLeft?: number | null
+  sortGroup?: number
   paymentEntries: PaymentEntry[]
   createdAt: string
   updatedAt: string
@@ -136,6 +146,9 @@ export interface PaymentListResponse {
     collected: number
     remainingPaise: number
     remaining: number
+    paidCount?: number
+    urgentCount?: number
+    thisWeekCount?: number
   }
 }
 

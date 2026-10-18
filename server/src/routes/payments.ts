@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import type { z } from 'zod'
 import { validate } from '../middleware/validate'
+import { requireOwner } from '../middleware/auth'
 import {
   correctionSchema,
   listPaymentsQuerySchema,
@@ -127,6 +128,7 @@ router.post(
 
 router.post(
   '/:id/corrections',
+  requireOwner,
   validate({ params: paymentIdParamSchema, body: correctionSchema }),
   asyncHandler(async (req, res) => {
     const body = req.body as CorrectionBody

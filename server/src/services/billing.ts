@@ -5,7 +5,6 @@ import { getPlan } from '../config/plans'
 import { env } from '../config/env'
 import {
   addMonthsAnchored,
-  addMonthsClamped,
   currentMonth,
   istDayOfMonth,
   monthStart,
@@ -66,7 +65,8 @@ export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPay
 
   const planInfo = planForMember(member)
   const periodStart = member.joiningDate
-  const periodEnd = addMonthsClamped(periodStart, planInfo.durationMonths)
+  const anchorDay = istDayOfMonth(periodStart)
+  const periodEnd = addMonthsAnchored(periodStart, planInfo.durationMonths, anchorDay)
 
   try {
     return await MonthlyPayment.create({

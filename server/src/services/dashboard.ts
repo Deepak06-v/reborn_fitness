@@ -55,7 +55,17 @@ async function sumOutstandingForMonth(month: string): Promise<SumResult> {
 
 async function sumOverdue(month: string, now: Date): Promise<SumResult> {
   const result = await MonthlyPayment.aggregate<SumResult>([
-    { $match: { billingMonth: { $lte: month }, dueDate: { $lt: now } } },
+    {
+      $match: {
+        billingMonth: { $lte: month },
+        $expr: {
+          $and: [
+            { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+            { $lt: [{ $ifNull: ['$periodEnd', '$dueDate'] }, now] },
+          ],
+        },
+      },
+    },
     {
       $project: { balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] } },
     },
@@ -67,7 +77,7 @@ async function sumOverdue(month: string, now: Date): Promise<SumResult> {
 
 async function monthStatusOverview(month: string, now: Date) {
   const payments = await MonthlyPayment.find({ billingMonth: month }).select(
-    'dueAmountPaise amountPaidPaise dueDate',
+    'dueAmountPaise amountPaidPaise dueDate periodEnd',
   )
   const counts: Record<PaymentStatus, number> = {
     paid: 0,
@@ -76,10 +86,11 @@ async function monthStatusOverview(month: string, now: Date) {
     overdue: 0,
   }
   for (const payment of payments) {
+    const effectiveEnd = payment.periodEnd ?? payment.dueDate
     const status = deriveStatus(
       payment.dueAmountPaise,
       payment.amountPaidPaise,
-      payment.dueDate,
+      effectiveEnd,
       now,
     )
     counts[status] += 1

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { validate } from '../middleware/validate'
+import { requireOwner } from '../middleware/auth'
 import {
   createMemberSchema,
   listMembersQuerySchema,
@@ -56,18 +57,22 @@ router.patch(
 
 router.post(
   '/:id/deactivate',
+  requireOwner,
   validate({ params: memberIdParamSchema }),
   asyncHandler(async (req, res) => {
-    const member = await setMemberStatus(req.params.id, 'inactive')
+    const adminId = (req.admin as NonNullable<typeof req.admin>)._id.toString()
+    const member = await setMemberStatus(req.params.id, 'inactive', adminId)
     res.json({ member: serializeMember(member) })
   }),
 )
 
 router.post(
   '/:id/activate',
+  requireOwner,
   validate({ params: memberIdParamSchema }),
   asyncHandler(async (req, res) => {
-    const member = await setMemberStatus(req.params.id, 'active')
+    const adminId = (req.admin as NonNullable<typeof req.admin>)._id.toString()
+    const member = await setMemberStatus(req.params.id, 'active', adminId)
     res.json({ member: serializeMember(member) })
   }),
 )

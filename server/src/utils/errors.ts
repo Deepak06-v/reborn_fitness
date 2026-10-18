@@ -98,11 +98,9 @@ export function errorHandler(
     return
   }
 
-  if (process.env.NODE_ENV !== 'test') {
-    // eslint-disable-next-line no-console
-    console.error('[api] Unhandled error:', error)
-  }
+  // eslint-disable-next-line no-console
+  console.error('[api] Unhandled error:', error)
   res
     .status(500)
-    .json({ error: { code: 'internal_error', message: 'An unexpected error occurred' } })
+    .json({ error: { code: 'internal_error', message: (error as Error)?.message || 'An unexpected error occurred' } })
 }

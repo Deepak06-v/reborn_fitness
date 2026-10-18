@@ -19,3 +19,19 @@ export const requireAdmin: RequestHandler = async (req, _res, next) => {
     next(error)
   }
 }
+
+// 'owner' and 'superadmin' are treated as Owner-level (full access).
+// 'admin' maps to Staff and must NOT have owner-level access.
+export const isOwnerRole = (role: string): boolean =>
+  role === 'owner' || role === 'superadmin'
+
+export const requireOwner: RequestHandler = (req, _res, next) => {
+  if (!req.admin) {
+    return next(ApiError.unauthorized())
+  }
+  if (!isOwnerRole(req.admin.role)) {
+    return next(ApiError.forbidden('Owner authorization required for this action'))
+  }
+  next()
+}
+

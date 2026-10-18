@@ -13,6 +13,7 @@ import {
 import type { Member, Payment, PaymentDetailResponse, PaymentMethod } from '../types'
 import { AdminModal, DueBadge, Spinner } from './ui'
 import { useToast } from './useToast'
+import { useAdminAuth } from '../auth/useAdminAuth'
 
 /** Opens a print-friendly bill in a new window (no PDF library needed). */
 function printBill(payment: Payment, member: Member | null) {
@@ -84,6 +85,7 @@ export function PaymentDetailModal({
   onChanged,
 }: PaymentDetailModalProps) {
   const { notify } = useToast()
+  const { isOwner } = useAdminAuth()
   const [detail, setDetail] = useState<PaymentDetailResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -263,7 +265,11 @@ export function PaymentDetailModal({
             <div className="rounded-md border border-hairline bg-canvas p-3">
               <p className="label-telemetry">Status</p>
               <div className="mt-2">
-                <DueBadge state={payment.dueState} />
+                <DueBadge
+                  state={payment.dueState}
+                  label={payment.statusLabel}
+                  tone={payment.statusTone}
+                />
               </div>
             </div>
           </div>
@@ -302,7 +308,7 @@ export function PaymentDetailModal({
                           </p>
                         ) : null}
                       </div>
-                      {!entry.voided ? (
+                      {!entry.voided && isOwner ? (
                         <button
                           type="button"
                           onClick={() => {

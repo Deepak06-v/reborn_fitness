@@ -30,11 +30,12 @@ export function istDayOf(value: string | Date): string {
 export async function createAdmin(
   username = TEST_ADMIN.username,
   password = TEST_ADMIN.password,
+  role: 'owner' | 'staff' | 'admin' | 'superadmin' = 'superadmin',
 ) {
   return Admin.create({
     username,
     passwordHash: await hashPassword(password),
-    role: 'superadmin',
+    role,
     active: true,
   })
 }

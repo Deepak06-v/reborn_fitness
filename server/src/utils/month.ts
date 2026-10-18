@@ -127,3 +127,20 @@ export function lastNMonths(month: string, count: number): string[] {
   for (let i = count - 1; i >= 0; i -= 1) months.push(addMonths(month, -i))
   return months
 }
+
+/** Formats a date as dd/mm/yyyy in Asia/Kolkata. */
+export function formatDDMMYYYY(date: Date | string | null | undefined): string {
+  if (!date) return ''
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (Number.isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d)
+  const y = parts.find((p) => p.type === 'year')?.value ?? '1970'
+  const m = parts.find((p) => p.type === 'month')?.value ?? '01'
+  const day = parts.find((p) => p.type === 'day')?.value ?? '01'
+  return `${day}/${m}/${y}`
+}

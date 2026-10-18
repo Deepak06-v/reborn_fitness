@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Receipt, Search } from 'lucide-react'
 import { adminApi } from '../api'
-import { formatDate, formatMonth, formatPaise } from '../format'
+import { formatDate, formatPaise } from '../format'
 import type { PaymentListResponse } from '../types'
 import { PaymentDetailModal } from '../components/PaymentDetailModal'
 import {
@@ -16,8 +16,10 @@ import {
 
 const statusFilters = [
   { value: '', label: 'All statuses' },
-  { value: 'paid', label: 'Paid' },
+  { value: 'urgent', label: 'Urgent (≤ 2 days / overdue)' },
+  { value: 'this_week', label: 'This week (3–7 days)' },
   { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
   { value: 'due_soon', label: 'Due soon' },
   { value: 'overdue', label: 'Overdue' },
 ]
@@ -90,19 +92,22 @@ export function PaymentsPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label="Billed"
-          value={formatPaise(data?.totals.billedPaise ?? 0)}
-          hint={`${data?.total ?? 0} bills${month ? ` · ${formatMonth(month)}` : ' · all periods'}`}
+          label="Urgent"
+          value={data?.totals.urgentCount ?? 0}
+          hint={`Overdue or due in ≤ 2 days · ${formatPaise(data?.totals.remainingPaise ?? 0)} remaining`}
+          tone="danger"
         />
         <StatCard
-          label="Collected"
-          value={formatPaise(data?.totals.collectedPaise ?? 0)}
-          tone="lime"
-        />
-        <StatCard
-          label="Remaining"
-          value={formatPaise(data?.totals.remainingPaise ?? 0)}
+          label="This week"
+          value={data?.totals.thisWeekCount ?? 0}
+          hint="Unpaid with 3–7 days remaining"
           tone="accent"
+        />
+        <StatCard
+          label="Paid"
+          value={data?.totals.paidCount ?? 0}
+          hint={`${formatPaise(data?.totals.collectedPaise ?? 0)} collected of ${formatPaise(data?.totals.billedPaise ?? 0)}`}
+          tone="lime"
         />
       </div>
 
@@ -239,10 +244,14 @@ export function PaymentsPage() {
                       {formatPaise(payment.balancePaise)}
                     </td>
                     <td className="px-4 py-3 font-body text-xs text-muted">
-                      {formatDate(payment.dueDate)}
+                      {formatDate(payment.periodEnd ?? payment.dueDate)}
                     </td>
                     <td className="px-4 py-3">
-                      <DueBadge state={payment.dueState} />
+                      <DueBadge
+                        state={payment.dueState}
+                        label={payment.statusLabel}
+                        tone={payment.statusTone}
+                      />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button

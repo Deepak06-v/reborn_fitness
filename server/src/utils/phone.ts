@@ -7,5 +7,5 @@ export function normalizePhone(input: string): string {
 }
 
 export function isValidPhone(normalized: string): boolean {
-  return /^\d{10,12}$/.test(normalized)
+  return /^\d{10}$/.test(normalized)
 }

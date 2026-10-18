@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { plans } from '../../data/plans'
 import { adminApi } from '../api'
-import { formatINR, todayInputValue } from '../format'
+import { calculateMembershipEndDate, formatINR, todayInputValue } from '../format'
 import type { Member } from '../types'
 import { AdminModal, Spinner } from './ui'
 import { useToast } from './useToast'
@@ -14,6 +14,13 @@ interface MemberFormModalProps {
   member: Member | null
   onClose: () => void
   onSaved: (member: Member) => void
+}
+
+const planDurationMonthsMap: Record<string, number> = {
+  monthly: 1,
+  'three-months': 3,
+  'six-months': 6,
+  yearly: 13,
 }
 
 export function MemberFormModal({
@@ -59,6 +66,11 @@ export function MemberFormModal({
   }, [open, member])
 
   const selectedPlan = plans.find((plan) => plan.id === planId) ?? null
+  const selectedDurationMonths = selectedPlan ? (planDurationMonthsMap[selectedPlan.id] ?? 1) : 0
+  const calculatedEndDate =
+    selectedPlan && joiningDate
+      ? calculateMembershipEndDate(joiningDate, selectedDurationMonths)
+      : null
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -69,9 +81,15 @@ export function MemberFormModal({
       setSubmitting(false)
       return
     }
+    const cleanPhone = phone.replace(/[\s-]/g, '')
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      setError('Phone number must be exactly 10 digits')
+      setSubmitting(false)
+      return
+    }
     const payload: Record<string, unknown> = {
       fullName: fullName.trim(),
-      phone: phone.trim(),
+      phone: cleanPhone,
       email: email.trim() || null,
       membershipType: membershipType.trim() || null,
       joiningDate,
@@ -169,6 +187,12 @@ export function MemberFormModal({
                 ? `${selectedPlan.duration} · ${formatINR(selectedPlan.offerPrice)}`
                 : 'Price and duration come from the selected plan'}
             </p>
+            {calculatedEndDate ? (
+              <p className="mt-1 font-mono text-xs text-accent">
+                Membership valid until:{' '}
+                <span className="font-semibold text-white">{calculatedEndDate}</span>
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="label-telemetry mb-1.5 block">Membership type (optional)</label>

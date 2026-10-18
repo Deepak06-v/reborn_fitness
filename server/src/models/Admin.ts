@@ -1,6 +1,6 @@
 import { Schema, model, models, type Document, type Model, type Types } from 'mongoose'
 
-export type AdminRole = 'admin' | 'superadmin'
+export type AdminRole = 'owner' | 'staff' | 'admin' | 'superadmin'
 
 export interface AdminDoc extends Document<Types.ObjectId> {
   _id: Types.ObjectId
@@ -17,7 +17,11 @@ const adminSchema = new Schema<AdminDoc>(
   {
     username: { type: String, required: true, trim: true, lowercase: true },
     passwordHash: { type: String, required: true, select: false },
-    role: { type: String, enum: ['admin', 'superadmin'], default: 'admin' },
+    role: {
+      type: String,
+      enum: ['owner', 'staff', 'admin', 'superadmin'],
+      default: 'owner',
+    },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
   },

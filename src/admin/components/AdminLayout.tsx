@@ -56,7 +56,7 @@ export function AdminLayout() {
     <div className="flex h-full flex-col gap-6 p-5">
       <div>
         <p className="font-display text-lg font-bold uppercase tracking-tight text-white">
-          Reborn<span className="text-accent">.</span>
+          Reborn Fitness<span className="text-accent">.</span>
         </p>
         <p className="label-telemetry mt-1">Operations Console</p>
       </div>

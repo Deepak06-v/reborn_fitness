@@ -1,13 +1,13 @@
-import { Types, type FilterQuery } from 'mongoose'
+import { Types, type FilterQuery, type PipelineStage } from 'mongoose'
 import { Admin } from '../models/Admin'
 import { Member } from '../models/Member'
 import { MonthlyPayment, type MonthlyPaymentDoc, type PaymentMethod } from '../models/MonthlyPayment'
 import { ApiError } from '../utils/errors'
 import { paiseToRupees } from '../utils/money'
-import { istDay } from '../utils/month'
+import { formatDDMMYYYY, istDayStart } from '../utils/month'
 import {
   deriveBaseStatus,
-  deriveDueState,
+  evaluatePaymentStatus,
   outstandingBalance,
   type PaymentFilterStatus,
 } from '../utils/paymentStatus'
@@ -60,45 +60,111 @@ export async function listPayments(params: ListPaymentsParams) {
   }
 
   const query: FilterQuery<MonthlyPaymentDoc> = { ...baseMatch }
-  if (params.status) query.$expr = paymentStatusExpr(params.status, now)
+  if (params.status && params.status !== 'all') {
+    query.$expr = paymentStatusExpr(params.status, now)
+  }
+
+  const urgentEndStart = istDayStart(new Date(now.getTime() + 3 * 86_400_000))
+  const weekEndStart = istDayStart(new Date(now.getTime() + 8 * 86_400_000))
+  const targetEnd = { $ifNull: ['$periodEnd', '$dueDate'] }
 
   const page = Math.max(params.page, 1)
   const limit = Math.min(Math.max(params.limit, 1), 200)
-  const [total, docs, totalsAgg] = await Promise.all([
+
+  const pipeline: PipelineStage[] = [
+    { $match: query },
+    {
+      $addFields: {
+        effectiveEnd: targetEnd,
+        sortGroup: {
+          $cond: [
+            { $gte: ['$amountPaidPaise', '$dueAmountPaise'] },
+            4,
+            {
+              $cond: [
+                { $lt: [targetEnd, urgentEndStart] },
+                1,
+                {
+                  $cond: [
+                    { $lt: [targetEnd, weekEndStart] },
+                    2,
+                    3,
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    { $sort: { sortGroup: 1 as const, effectiveEnd: 1 as const, memberId: 1 as const } },
+    { $skip: (page - 1) * limit },
+    { $limit: limit },
+  ]
+
+  const summaryPipeline: unknown[] = [
+    { $match: baseMatch },
+    {
+      $project: {
+        due: '$dueAmountPaise',
+        paid: '$amountPaidPaise',
+        balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] },
+        isPaid: { $gte: ['$amountPaidPaise', '$dueAmountPaise'] },
+        isUrgent: {
+          $and: [
+            { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+            { $lt: [targetEnd, urgentEndStart] },
+          ],
+        },
+        isThisWeek: {
+          $and: [
+            { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+            { $gte: [targetEnd, urgentEndStart] },
+            { $lt: [targetEnd, weekEndStart] },
+          ],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        due: { $sum: '$due' },
+        paid: { $sum: '$paid' },
+        remaining: { $sum: { $cond: [{ $gt: ['$balance', 0] }, '$balance', 0] } },
+        paidCount: { $sum: { $cond: ['$isPaid', 1, 0] } },
+        urgentCount: { $sum: { $cond: ['$isUrgent', 1, 0] } },
+        thisWeekCount: { $sum: { $cond: ['$isThisWeek', 1, 0] } },
+      },
+    },
+  ]
+
+  const [total, rawDocs, totalsAgg] = await Promise.all([
     MonthlyPayment.countDocuments(query),
-    MonthlyPayment.find(query)
-      .sort({ billingMonth: -1, memberId: 1 })
-      .skip((page - 1) * limit)
-      .limit(limit),
+    MonthlyPayment.aggregate(pipeline as never[]),
     MonthlyPayment.aggregate<{
       _id: null
       due: number
       paid: number
       remaining: number
-    }>([
-      { $match: baseMatch },
-      {
-        $project: {
-          due: '$dueAmountPaise',
-          paid: '$amountPaidPaise',
-          balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          due: { $sum: '$due' },
-          paid: { $sum: '$paid' },
-          remaining: { $sum: { $cond: [{ $gt: ['$balance', 0] }, '$balance', 0] } },
-        },
-      },
-    ]),
+      paidCount: number
+      urgentCount: number
+      thisWeekCount: number
+    }>(summaryPipeline as never[]),
   ])
 
+  const docs = rawDocs.map((doc) => MonthlyPayment.hydrate(doc))
   const members = await Member.find({ _id: { $in: docs.map((doc) => doc.member) } })
   const memberMap = new Map(members.map((member) => [member._id.toString(), member]))
 
-  const totals = totalsAgg[0] ?? { _id: null, due: 0, paid: 0, remaining: 0 }
+  const totals = totalsAgg[0] ?? {
+    _id: null,
+    due: 0,
+    paid: 0,
+    remaining: 0,
+    paidCount: 0,
+    urgentCount: 0,
+    thisWeekCount: 0,
+  }
 
   return {
     month: params.month ?? null,
@@ -122,6 +188,9 @@ export async function listPayments(params: ListPaymentsParams) {
       collected: paiseToRupees(totals.paid),
       remainingPaise: totals.remaining,
       remaining: paiseToRupees(totals.remaining),
+      paidCount: totals.paidCount,
+      urgentCount: totals.urgentCount,
+      thisWeekCount: totals.thisWeekCount,
     },
   }
 }
@@ -142,34 +211,78 @@ export async function getPaymentsForExport(params: {
     }).select('_id')
     query.member = { $in: members.map((member) => member._id) }
   }
-  if (params.status) query.$expr = paymentStatusExpr(params.status, now)
+  if (params.status && params.status !== 'all') {
+    query.$expr = paymentStatusExpr(params.status, now)
+  }
 
-  const docs = await MonthlyPayment.find(query).sort({ billingMonth: -1, memberId: 1 })
+  const urgentEndStart = istDayStart(new Date(now.getTime() + 3 * 86_400_000))
+  const weekEndStart = istDayStart(new Date(now.getTime() + 8 * 86_400_000))
+  const targetEnd = { $ifNull: ['$periodEnd', '$dueDate'] }
+
+  const pipeline: PipelineStage[] = [
+    { $match: query },
+    {
+      $addFields: {
+        effectiveEnd: targetEnd,
+        sortGroup: {
+          $cond: [
+            { $gte: ['$amountPaidPaise', '$dueAmountPaise'] },
+            4,
+            {
+              $cond: [
+                { $lt: [targetEnd, urgentEndStart] },
+                1,
+                {
+                  $cond: [
+                    { $lt: [targetEnd, weekEndStart] },
+                    2,
+                    3,
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    { $sort: { sortGroup: 1 as const, effectiveEnd: 1 as const, memberId: 1 as const } },
+  ]
+
+  const rawDocs = await MonthlyPayment.aggregate(pipeline)
+  const docs = rawDocs.map((doc) => MonthlyPayment.hydrate(doc))
   const members = await Member.find({ _id: { $in: docs.map((doc) => doc.member) } })
   const memberMap = new Map(members.map((member) => [member._id.toString(), member]))
 
   return docs.map((doc) => {
     const member = memberMap.get(doc.member.toString())
     const balance = outstandingBalance(doc.dueAmountPaise, doc.amountPaidPaise)
+    const effectiveEnd = doc.periodEnd ?? doc.dueDate
+    const evalResult = evaluatePaymentStatus(
+      doc.dueAmountPaise,
+      doc.amountPaidPaise,
+      effectiveEnd,
+      now,
+    )
     const lastEntry = [...doc.paymentEntries]
       .filter((entry) => !entry.voided)
       .sort((a, b) => b.paymentDate.getTime() - a.paymentDate.getTime())[0]
+
     return {
       memberRef: member?.memberId ?? doc.memberId,
       fullName: member?.fullName ?? 'Unknown member',
       phone: member?.phone ?? '',
       planName: doc.planName ?? '',
-      joiningDate: member?.joiningDate ? istDay(member.joiningDate) : '',
-      periodStart: doc.periodStart ? istDay(doc.periodStart) : '',
-      periodEnd: doc.periodEnd ? istDay(doc.periodEnd) : '',
-      dueDate: istDay(doc.dueDate),
+      joiningDate: member?.joiningDate ? formatDDMMYYYY(member.joiningDate) : '',
+      periodStart: doc.periodStart ? formatDDMMYYYY(doc.periodStart) : '',
+      periodEnd: doc.periodEnd ? formatDDMMYYYY(doc.periodEnd) : '',
+      dueDate: formatDDMMYYYY(doc.dueDate),
       invoiceNumber: doc.invoiceNumber ?? '',
       dueAmount: paiseToRupees(doc.dueAmountPaise),
       amountPaid: paiseToRupees(doc.amountPaidPaise),
       balance: paiseToRupees(balance),
-      status: deriveDueState(doc.dueAmountPaise, doc.amountPaidPaise, doc.dueDate, now),
-      lastPaymentDate: lastEntry ? istDay(lastEntry.paymentDate) : '',
-      lastPaymentMethod: lastEntry?.method ?? '',
+      status: evalResult.label,
+      lastPaymentDate: lastEntry ? formatDDMMYYYY(lastEntry.paymentDate) : '',
+      lastPaymentMethod: lastEntry?.method ? lastEntry.method.toUpperCase().replace('_', ' ') : '',
     }
   })
 }
