@@ -66,7 +66,7 @@ export async function listPayments(params: ListPaymentsParams) {
 
   const urgentEndStart = istDayStart(new Date(now.getTime() + 3 * 86_400_000))
   const weekEndStart = istDayStart(new Date(now.getTime() + 8 * 86_400_000))
-  const targetEnd = { $ifNull: ['$periodEnd', '$dueDate'] }
+  const targetEnd = '$dueDate'
 
   const page = Math.max(params.page, 1)
   const limit = Math.min(Math.max(params.limit, 1), 200)
@@ -217,7 +217,7 @@ export async function getPaymentsForExport(params: {
 
   const urgentEndStart = istDayStart(new Date(now.getTime() + 3 * 86_400_000))
   const weekEndStart = istDayStart(new Date(now.getTime() + 8 * 86_400_000))
-  const targetEnd = { $ifNull: ['$periodEnd', '$dueDate'] }
+  const targetEnd = '$dueDate'
 
   const pipeline: PipelineStage[] = [
     { $match: query },
@@ -256,11 +256,10 @@ export async function getPaymentsForExport(params: {
   return docs.map((doc) => {
     const member = memberMap.get(doc.member.toString())
     const balance = outstandingBalance(doc.dueAmountPaise, doc.amountPaidPaise)
-    const effectiveEnd = doc.periodEnd ?? doc.dueDate
     const evalResult = evaluatePaymentStatus(
       doc.dueAmountPaise,
       doc.amountPaidPaise,
-      effectiveEnd,
+      doc.dueDate,
       now,
     )
     const lastEntry = [...doc.paymentEntries]

@@ -70,6 +70,23 @@ export async function runVerifyAndBackfill(apply = false): Promise<MigrationSumm
 
 async function main() {
   const isApply = process.argv.includes('--apply')
+
+  if (isApply) {
+    const isAtlasOrProd =
+      process.env.NODE_ENV === 'production' ||
+      (process.env.MONGODB_URI && /mongodb\+srv|atlas/i.test(process.env.MONGODB_URI))
+
+    if (isAtlasOrProd && process.env.ALLOW_PRODUCTION_MIGRATION !== 'true') {
+      // eslint-disable-next-line no-console
+      console.error(
+        '\n[SAFETY ABORT] --apply requested against production / Atlas database without explicit approval.\n' +
+          'To run database mutations against production, you must explicitly set:\n' +
+          '  ALLOW_PRODUCTION_MIGRATION=true\n',
+      )
+      process.exit(1)
+    }
+  }
+
   await connectDatabase()
   // eslint-disable-next-line no-console
   console.log(`[migration] Starting verification ${isApply ? '(APPLY MODE)' : '(DRY RUN)'}...`)

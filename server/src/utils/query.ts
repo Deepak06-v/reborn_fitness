@@ -15,7 +15,7 @@ export function paymentStatusExpr(
   status: PaymentFilterStatus | string,
   now: Date,
 ): Record<string, unknown> {
-  const targetField = { $ifNull: ['$periodEnd', '$dueDate'] }
+  const targetField = '$dueDate'
   const todayStart = istDayStart(now)
   // End of day +2 (start of day +3): covers today (0), +1, +2 days
   const urgentEndStart = istDayStart(new Date(now.getTime() + 3 * 86_400_000))

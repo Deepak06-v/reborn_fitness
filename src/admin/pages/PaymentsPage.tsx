@@ -244,7 +244,7 @@ export function PaymentsPage() {
                       {formatPaise(payment.balancePaise)}
                     </td>
                     <td className="px-4 py-3 font-body text-xs text-muted">
-                      {formatDate(payment.periodEnd ?? payment.dueDate)}
+                      {formatDate(payment.dueDate)}
                     </td>
                     <td className="px-4 py-3">
                       <DueBadge

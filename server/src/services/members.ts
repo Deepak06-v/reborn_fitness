@@ -248,11 +248,10 @@ export async function listMembers(params: ListMembersParams) {
       currentMonth: selectedMonth,
       currentMonthPayment: payment
         ? (() => {
-            const effectiveEnd = payment.periodEnd ?? payment.dueDate
             const evalResult = evaluatePaymentStatus(
               payment.dueAmountPaise,
               payment.amountPaidPaise,
-              effectiveEnd,
+              payment.dueDate,
             )
             return {
               id: payment._id.toString(),

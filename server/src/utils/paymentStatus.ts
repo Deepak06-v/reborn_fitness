@@ -66,11 +66,11 @@ export interface PaymentStatusDetails {
 export function evaluatePaymentStatus(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): PaymentStatusDetails {
   const balance = dueAmountPaise - amountPaidPaise
-  const daysLeft = calendarDaysDifference(periodEndDate, now)
+  const daysLeft = calendarDaysDifference(dueDate, now)
 
   if (balance <= 0) {
     return {
@@ -141,45 +141,45 @@ export function evaluatePaymentStatus(
 export function deriveStatus(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): PaymentStatus {
-  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).status
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, dueDate, now).status
 }
 
 export function deriveDueState(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): DueState {
-  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).dueState
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, dueDate, now).dueState
 }
 
 export function deriveDueTone(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): DueTone {
-  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).tone
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, dueDate, now).tone
 }
 
 export function deriveStatusLabel(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): string {
-  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).label
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, dueDate, now).label
 }
 
 export function deriveSortGroup(
   dueAmountPaise: number,
   amountPaidPaise: number,
-  periodEndDate: Date,
+  dueDate: Date,
   now: Date = new Date(),
 ): 1 | 2 | 3 | 4 {
-  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, periodEndDate, now).sortGroup
+  return evaluatePaymentStatus(dueAmountPaise, amountPaidPaise, dueDate, now).sortGroup
 }
 

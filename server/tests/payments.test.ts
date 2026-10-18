@@ -225,12 +225,12 @@ describe('payment recording', () => {
 
   it('colour-codes due state as unpaid, due_soon and overdue', async () => {
     const unpaid = await addMember({ phone: '9000000101', joiningDate: istDay(10) })
-    const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(-26) })
-    const overdue = await addMember({ phone: '9000000103', joiningDate: istDay(-40) })
+    const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(5) })
+    const overdue = await addMember({ phone: '9000000103', joiningDate: istDay(-10) })
 
     const futureBill = await findPayment(unpaid.memberId, istDay(10).slice(0, 7))
-    const soonBill = await findPayment(dueSoon.memberId, istDay(-26).slice(0, 7))
-    const pastBill = await findPayment(overdue.memberId, istDay(-40).slice(0, 7))
+    const soonBill = await findPayment(dueSoon.memberId, istDay(5).slice(0, 7))
+    const pastBill = await findPayment(overdue.memberId, istDay(-10).slice(0, 7))
 
     expect(futureBill.dueState).toBe('unpaid')
     expect(soonBill.dueState).toBe('due_soon')

@@ -173,8 +173,8 @@ describe('reconcileMemberBilling', () => {
       {
         $set: {
           planId: 'yearly',
-          planName: '1 Year',
-          planDurationMonths: 13,
+          planName: '12 Months (1 Year)',
+          planDurationMonths: 12,
           planPricePaise: 1000000,
           monthlyFeePaise: 1000000,
         },
@@ -197,7 +197,7 @@ describe('reconcileMemberBilling', () => {
     })
     expect(nextPeriod).toBeTruthy()
     expect(nextPeriod!.dueAmountPaise).toBe(1000000)
-    expect(nextPeriod!.durationMonths).toBe(13)
+    expect(nextPeriod!.durationMonths).toBe(12)
   })
 })
 

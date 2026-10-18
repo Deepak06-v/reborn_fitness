@@ -75,11 +75,10 @@ export function serializePayment(
 ): Record<string, unknown> {
   const balance = outstandingBalance(payment.dueAmountPaise, payment.amountPaidPaise)
   const plan = getPlan(payment.planId)
-  const effectiveEnd = payment.periodEnd ?? payment.dueDate
   const evalResult = evaluatePaymentStatus(
     payment.dueAmountPaise,
     payment.amountPaidPaise,
-    effectiveEnd,
+    payment.dueDate,
   )
 
   return {

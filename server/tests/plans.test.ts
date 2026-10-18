@@ -36,10 +36,13 @@ describe('membership plan catalogue', () => {
   it('exposes the catalogue to authenticated admins', async () => {
     const response = await session.agent.get('/api/admin/plans').expect(200)
     const ids = response.body.plans.map((plan: { id: string }) => plan.id)
-    expect(ids).toEqual(['monthly', 'three-months', 'six-months', 'yearly'])
+    expect(ids).toHaveLength(15)
+    expect(ids).toContain('monthly')
+    expect(ids).toContain('two-months')
+    expect(ids).toContain('fifteen-months')
     const yearly = response.body.plans.find((plan: { id: string }) => plan.id === 'yearly')
     expect(yearly.pricePaise).toBe(1000000)
-    expect(yearly.durationMonths).toBe(13)
+    expect(yearly.durationMonths).toBe(12)
   })
 
   it('requires authentication', async () => {

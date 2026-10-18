@@ -18,9 +18,20 @@ interface MemberFormModalProps {
 
 const planDurationMonthsMap: Record<string, number> = {
   monthly: 1,
+  'two-months': 2,
   'three-months': 3,
+  'four-months': 4,
+  'five-months': 5,
   'six-months': 6,
-  yearly: 13,
+  'seven-months': 7,
+  'eight-months': 8,
+  'nine-months': 9,
+  'ten-months': 10,
+  'eleven-months': 11,
+  yearly: 12,
+  'thirteen-months': 13,
+  'fourteen-months': 14,
+  'fifteen-months': 15,
 }
 
 export function MemberFormModal({

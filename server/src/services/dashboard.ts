@@ -1,6 +1,12 @@
 import { Member } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
-import { lastNMonths, monthEndExclusive, monthRange, monthStart } from '../utils/month'
+import {
+  istDayStart,
+  lastNMonths,
+  monthEndExclusive,
+  monthRange,
+  monthStart,
+} from '../utils/month'
 import { deriveStatus, type PaymentStatus } from '../utils/paymentStatus'
 import { paiseToRupees } from '../utils/money'
 import { reconcileAllBilling } from './billing'
@@ -54,6 +60,8 @@ async function sumOutstandingForMonth(month: string): Promise<SumResult> {
 }
 
 async function sumOverdue(month: string, now: Date): Promise<SumResult> {
+  const todayStart = istDayStart(now)
+  const targetEnd = '$dueDate'
   const result = await MonthlyPayment.aggregate<SumResult>([
     {
       $match: {
@@ -61,7 +69,7 @@ async function sumOverdue(month: string, now: Date): Promise<SumResult> {
         $expr: {
           $and: [
             { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
-            { $lt: [{ $ifNull: ['$periodEnd', '$dueDate'] }, now] },
+            { $lt: [targetEnd, todayStart] },
           ],
         },
       },
@@ -77,7 +85,7 @@ async function sumOverdue(month: string, now: Date): Promise<SumResult> {
 
 async function monthStatusOverview(month: string, now: Date) {
   const payments = await MonthlyPayment.find({ billingMonth: month }).select(
-    'dueAmountPaise amountPaidPaise dueDate periodEnd',
+    'dueAmountPaise amountPaidPaise dueDate',
   )
   const counts: Record<PaymentStatus, number> = {
     paid: 0,
@@ -86,11 +94,10 @@ async function monthStatusOverview(month: string, now: Date) {
     overdue: 0,
   }
   for (const payment of payments) {
-    const effectiveEnd = payment.periodEnd ?? payment.dueDate
     const status = deriveStatus(
       payment.dueAmountPaise,
       payment.amountPaidPaise,
-      effectiveEnd,
+      payment.dueDate,
       now,
     )
     counts[status] += 1
@@ -206,13 +213,25 @@ async function monthlyTrend(month: string) {
 }
 
 async function overdueMembers(month: string, now: Date) {
+  const todayStart = istDayStart(now)
+  const targetEnd = '$dueDate'
   const rows = await MonthlyPayment.aggregate([
-    { $match: { billingMonth: { $lte: month }, dueDate: { $lt: now } } },
+    {
+      $match: {
+        billingMonth: { $lte: month },
+        $expr: {
+          $and: [
+            { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+            { $lt: [targetEnd, todayStart] },
+          ],
+        },
+      },
+    },
     {
       $project: {
         member: 1,
         balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] },
-        dueDate: 1,
+        effectiveDue: '$dueDate',
         billingMonth: 1,
       },
     },
@@ -222,7 +241,7 @@ async function overdueMembers(month: string, now: Date) {
         _id: '$member',
         balance: { $sum: '$balance' },
         months: { $sum: 1 },
-        oldestDue: { $min: '$dueDate' },
+        oldestDue: { $min: '$effectiveDue' },
       },
     },
     { $sort: { balance: -1 } },
