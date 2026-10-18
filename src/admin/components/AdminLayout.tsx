@@ -99,7 +99,7 @@ export function AdminLayout() {
       {/* Mobile top bar */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-hairline bg-surface px-4 py-3 lg:hidden">
         <p className="font-display text-base font-bold uppercase tracking-tight text-white">
-          Reborn<span className="text-accent">.</span>
+          Reborn Fitness<span className="text-accent">.</span>
         </p>
         <button
           type="button"
