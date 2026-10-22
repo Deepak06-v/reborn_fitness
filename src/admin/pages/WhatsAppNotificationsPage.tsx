@@ -331,7 +331,7 @@ export function WhatsAppNotificationsPage() {
       <PageHeader
         eyebrow="Automation & Messaging"
         title="WhatsApp Notifications"
-        description="Automated fee reminders, daily overdue tracking, and member broadcasts via official Meta WhatsApp Cloud API."
+        description="Automated fee reminders, daily overdue tracking, and member broadcasts via Evolution API."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -359,7 +359,7 @@ export function WhatsAppNotificationsPage() {
       />
 
       {/* Integration Status Banner */}
-      {!status?.isConfigured && (
+      {!status?.isConfigured ? (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div className="text-xs">
@@ -367,13 +367,37 @@ export function WhatsAppNotificationsPage() {
               WhatsApp Integration Offline / Mock Mode Active
             </p>
             <p className="mt-1 font-body text-amber-200/80">
-              Meta WhatsApp Cloud API credentials are not configured in the environment.
+              Evolution API credentials are not configured in the environment.
               All notification workflows, deduplication, and queues run safely in simulation mode.
-              To enable live WhatsApp delivery, add <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ACCESS_TOKEN</code> and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_PHONE_NUMBER_ID</code> to your backend environment.
+              To enable live WhatsApp delivery, set <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ENABLED=true</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">EVOLUTION_API_URL</code>, and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">EVOLUTION_API_KEY</code> in your backend environment.
             </p>
           </div>
         </div>
-      )}
+      ) : status.connectionState === 'disconnected' ? (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div className="text-xs">
+            <p className="font-semibold uppercase tracking-wider text-amber-300">
+              Evolution API Configured / Instance Disconnected
+            </p>
+            <p className="mt-1 font-body text-amber-200/80">
+              Evolution API credentials are valid, but the WhatsApp instance ({status.instanceName || 'reborn-fitness'}) is not connected to a WhatsApp Web session. Complete QR code pairing in Phase 2.
+            </p>
+          </div>
+        </div>
+      ) : status.connectionState === 'unreachable' ? (
+        <div className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-red-200">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+          <div className="text-xs">
+            <p className="font-semibold uppercase tracking-wider text-red-300">
+              Evolution API Unreachable
+            </p>
+            <p className="mt-1 font-body text-red-200/80">
+              The backend could not reach the configured Evolution API server. Ensure the service is running and accessible.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {/* Top Stat Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -400,10 +424,32 @@ export function WhatsAppNotificationsPage() {
         />
         <StatCard
           label="Provider Status"
-          value={status?.isConfigured ? 'Live (Meta)' : 'Safe Mock'}
-          hint={status?.phoneNumberId ? `Phone ID: ${status.phoneNumberId}` : 'Credentials pending'}
+          value={
+            status?.connectionState === 'connected'
+              ? 'Connected'
+              : status?.connectionState === 'disconnected'
+                ? 'Disconnected'
+                : status?.connectionState === 'unreachable'
+                  ? 'Unreachable'
+                  : status?.isConfigured
+                    ? 'Evolution'
+                    : 'Safe Mock'
+          }
+          hint={
+            status?.connectionState === 'connected'
+              ? `Instance: ${status.instanceName || 'reborn-fitness'}`
+              : status?.isConfigured
+                ? 'Evolution credentials set'
+                : 'Credentials pending'
+          }
           icon={<CheckCircle2 className="h-4 w-4" />}
-          tone={status?.isConfigured ? 'lime' : 'default'}
+          tone={
+            status?.connectionState === 'connected'
+              ? 'lime'
+              : status?.connectionState === 'disconnected' || status?.connectionState === 'unreachable'
+                ? 'danger'
+                : 'default'
+          }
         />
       </div>
 
@@ -755,7 +801,7 @@ export function WhatsAppNotificationsPage() {
                 Broadcast Campaigns
               </h2>
               <p className="mt-1 font-body text-xs text-muted">
-                Recent broadcast announcements with real-time Meta delivery tracking.
+                Recent broadcast announcements with real-time Evolution delivery tracking.
               </p>
             </div>
 
@@ -953,6 +999,14 @@ export function WhatsAppNotificationsPage() {
           </div>
         </div>
       </AdminModal>
+
+      {/* Evolution API License / Attribution notice */}
+      <div className="flex flex-col items-center justify-between gap-2 border-t border-hairline/60 pt-4 text-[0.6875rem] text-muted sm:flex-row">
+        <span>REBORN FITNESS Automated WhatsApp Notification System</span>
+        <span className="font-mono text-[0.625rem] text-dim">
+          WhatsApp messaging powered by <span className="text-muted">Evolution API</span>
+        </span>
+      </div>
     </div>
   )
 }

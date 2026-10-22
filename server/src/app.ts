@@ -78,8 +78,11 @@ export function createApp() {
     res.json({ status: 'ok' })
   })
 
-  // Meta WhatsApp Webhook endpoint (unauthenticated, signature-verified)
-  app.use('/api/whatsapp/webhook', whatsappWebhookRouter)
+  // Evolution API WhatsApp Webhook endpoint (secret verified)
+  app.use(env.EVOLUTION_WEBHOOK_PATH || '/api/whatsapp/evolution-webhook', whatsappWebhookRouter)
+  if (env.EVOLUTION_WEBHOOK_PATH !== '/api/whatsapp/webhook') {
+    app.use('/api/whatsapp/webhook', whatsappWebhookRouter)
+  }
 
   app.use('/api/admin', apiRateLimiter)
   app.use('/api/admin', ensureCsrf, verifyCsrf)

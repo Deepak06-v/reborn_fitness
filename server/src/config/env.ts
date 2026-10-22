@@ -22,18 +22,16 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().positive().default(8),
   // How often the in-process billing job reconciles recurring billing periods.
   BILLING_RECONCILE_INTERVAL_MINUTES: z.coerce.number().positive().default(360),
-  // WhatsApp Cloud API Configuration (all optional for dev / safe fallback mode)
+  // Evolution API WhatsApp Configuration (disabled by default; safe mock mode when unset)
   WHATSAPP_ENABLED: z
     .string()
     .optional()
     .transform((value) => value === 'true'),
-  WHATSAPP_API_VERSION: z.string().default('v21.0'),
-  WHATSAPP_PHONE_NUMBER_ID: z.string().optional().transform(blankToUndefined),
-  WHATSAPP_WABA_ID: z.string().optional().transform(blankToUndefined),
-  WHATSAPP_ACCESS_TOKEN: z.string().optional().transform(blankToUndefined),
-  WHATSAPP_VERIFY_TOKEN: z.string().optional().transform(blankToUndefined),
-  WHATSAPP_APP_SECRET: z.string().optional().transform(blankToUndefined),
-  WHATSAPP_WEBHOOK_PATH: z.string().default('/api/whatsapp/webhook'),
+  EVOLUTION_API_URL: z.string().optional().transform(blankToUndefined),
+  EVOLUTION_API_KEY: z.string().optional().transform(blankToUndefined),
+  EVOLUTION_INSTANCE_NAME: z.string().default('reborn-fitness'),
+  EVOLUTION_WEBHOOK_SECRET: z.string().optional().transform(blankToUndefined),
+  EVOLUTION_WEBHOOK_PATH: z.string().default('/api/whatsapp/evolution-webhook'),
   // Optional at parse time; the production requirement is enforced below.
   // Blank values (`ADMIN_USERNAME=`) are treated as "not configured".
   ADMIN_USERNAME: z
@@ -86,8 +84,8 @@ export const env = {
     .filter(Boolean),
   sessionTtlMs: data.SESSION_TTL_HOURS * 60 * 60 * 1000,
   billingReconcileIntervalMinutes: data.BILLING_RECONCILE_INTERVAL_MINUTES,
-  isWhatsAppConfigured: Boolean(data.WHATSAPP_ACCESS_TOKEN && data.WHATSAPP_PHONE_NUMBER_ID),
+  isWhatsAppConfigured: Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY),
   isWhatsAppEnabled:
-    (data.WHATSAPP_ENABLED ?? true) &&
-    Boolean(data.WHATSAPP_ACCESS_TOKEN && data.WHATSAPP_PHONE_NUMBER_ID),
+    (data.WHATSAPP_ENABLED ?? false) &&
+    Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY),
 }

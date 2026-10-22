@@ -14,17 +14,48 @@ const router = Router()
 
 /**
  * GET /api/admin/whatsapp/status
- * Returns WhatsApp configuration state without exposing secrets.
+ * Returns Evolution WhatsApp configuration state and live instance connection status without exposing secrets.
  */
-router.get('/status', (_req: Request, res: Response) => {
+router.get('/status', async (_req: Request, res: Response) => {
+  let connectionState:
+    | 'disabled'
+    | 'not_configured'
+    | 'unreachable'
+    | 'disconnected'
+    | 'connected'
+    | 'unavailable' = 'disabled'
+  let rawState: string | undefined
+
+  if (!env.WHATSAPP_ENABLED) {
+    connectionState = 'disabled'
+  } else if (!env.isWhatsAppConfigured) {
+    connectionState = 'not_configured'
+  } else {
+    try {
+      const provider = whatsAppService.getProvider()
+      if (
+        'getConnectionStatus' in provider &&
+        typeof provider.getConnectionStatus === 'function'
+      ) {
+        const result = await provider.getConnectionStatus()
+        connectionState = result.state === 'unconfigured' ? 'not_configured' : result.state
+        rawState = result.rawState
+      } else {
+        connectionState = 'connected'
+      }
+    } catch {
+      connectionState = 'unreachable'
+    }
+  }
+
   res.json({
+    provider: 'evolution',
     isConfigured: env.isWhatsAppConfigured,
     isEnabled: env.isWhatsAppEnabled,
-    apiVersion: env.WHATSAPP_API_VERSION,
-    phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID
-      ? `...${env.WHATSAPP_PHONE_NUMBER_ID.slice(-4)}`
-      : null,
-    webhookPath: env.WHATSAPP_WEBHOOK_PATH,
+    instanceName: env.EVOLUTION_INSTANCE_NAME,
+    webhookPath: env.EVOLUTION_WEBHOOK_PATH,
+    connectionState,
+    rawState,
   })
 })
 

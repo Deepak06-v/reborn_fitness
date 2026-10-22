@@ -2,17 +2,22 @@ import type {
   SendMediaOptions,
   SendTemplateOptions,
   SendTextOptions,
+  WhatsAppConnectionStatusResult,
   WhatsAppMessageResult,
 } from './whatsapp.types'
 
 export interface WhatsAppProvider {
   readonly isConfigured: boolean
 
-  sendTemplateMessage(options: SendTemplateOptions): Promise<WhatsAppMessageResult>
+  getConnectionStatus?(): Promise<WhatsAppConnectionStatusResult>
 
   sendTextMessage(options: SendTextOptions): Promise<WhatsAppMessageResult>
 
   sendMediaMessage(options: SendMediaOptions): Promise<WhatsAppMessageResult>
 
-  verifyWebhookSignature(rawBody: Buffer | string, signatureHeader?: string): boolean
+  sendTemplateMessage(options: SendTemplateOptions): Promise<WhatsAppMessageResult>
+
+  verifyWebhookSecret?(providedSecret?: string): boolean
+
+  verifyWebhookSignature?(rawBody: Buffer | string, signatureHeader?: string): boolean
 }

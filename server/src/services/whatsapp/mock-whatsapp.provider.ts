@@ -4,11 +4,13 @@ import type {
   SendMediaOptions,
   SendTemplateOptions,
   SendTextOptions,
+  WhatsAppConnectionStatusResult,
   WhatsAppMessageResult,
 } from './whatsapp.types'
 
 export class MockWhatsAppProvider implements WhatsAppProvider {
   readonly isConfigured: boolean = false
+  public simulatedConnectionState: 'connected' | 'disconnected' | 'unreachable' | 'unconfigured' | 'unavailable' | null = null
   public sentMessages: Array<{
     type: 'template' | 'text' | 'media'
     to: string
@@ -18,6 +20,16 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   constructor(isConfigured = false) {
     this.isConfigured = isConfigured
+  }
+
+  async getConnectionStatus(): Promise<WhatsAppConnectionStatusResult> {
+    if (this.simulatedConnectionState) {
+      return { state: this.simulatedConnectionState }
+    }
+    return {
+      state: this.isConfigured ? 'connected' : 'unconfigured',
+      rawState: this.isConfigured ? 'open' : 'disconnected',
+    }
   }
 
   async sendTemplateMessage(options: SendTemplateOptions): Promise<WhatsAppMessageResult> {
@@ -63,6 +75,10 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       messageId,
       status: 'sent',
     }
+  }
+
+  verifyWebhookSecret(_providedSecret?: string): boolean {
+    return true
   }
 
   verifyWebhookSignature(_rawBody: Buffer | string, signatureHeader?: string): boolean {

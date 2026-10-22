@@ -27,7 +27,8 @@ export interface WhatsAppNotificationDoc extends Document<Types.ObjectId> {
   templateName: string | null
   message: string | null
   mediaUrl: string | null
-  messageId: string | null // Meta wamid
+  messageId: string | null // External message identifier (Evolution / Baileys or Meta wamid)
+  provider?: string | null
   status: WhatsAppDeliveryStatus
   error: string | null
   sentAt: Date | null
@@ -57,6 +58,7 @@ const whatsAppNotificationSchema = new Schema<WhatsAppNotificationDoc>(
     message: { type: String, default: null, trim: true },
     mediaUrl: { type: String, default: null, trim: true },
     messageId: { type: String, default: null, trim: true, index: true, sparse: true },
+    provider: { type: String, default: 'evolution', index: true },
     status: {
       type: String,
       enum: ['not_sent', 'queued', 'sent', 'delivered', 'read', 'failed'],

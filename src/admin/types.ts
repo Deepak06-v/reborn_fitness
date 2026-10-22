@@ -235,12 +235,24 @@ export type WhatsAppDeliveryStatus =
   | 'read'
   | 'failed'
 
+export type WhatsAppConnectionState =
+  | 'disabled'
+  | 'not_configured'
+  | 'unreachable'
+  | 'disconnected'
+  | 'connected'
+  | 'unavailable'
+
 export interface WhatsAppStatusResponse {
+  provider?: string
   isConfigured: boolean
   isEnabled: boolean
-  apiVersion: string
-  phoneNumberId: string | null
+  instanceName?: string | null
   webhookPath: string
+  connectionState?: WhatsAppConnectionState
+  rawState?: string
+  apiVersion?: string
+  phoneNumberId?: string | null
 }
 
 export interface WhatsAppNotificationState {

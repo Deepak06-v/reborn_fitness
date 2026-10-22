@@ -3,23 +3,39 @@ import { env } from '../../config/env'
 import { Member, type MemberDoc } from '../../models/Member'
 import { MonthlyPayment, type MonthlyPaymentDoc } from '../../models/MonthlyPayment'
 import { WhatsAppCampaign, type WhatsAppCampaignDoc } from '../../models/WhatsAppCampaign'
-import { WhatsAppNotification, type WhatsAppNotificationDoc } from '../../models/WhatsAppNotification'
+import {
+  WhatsAppNotification,
+  type WhatsAppDeliveryStatus,
+  type WhatsAppNotificationDoc,
+} from '../../models/WhatsAppNotification'
 import { paiseToRupees } from '../../utils/money'
 import { formatDDMMYYYY, istDay } from '../../utils/month'
 import { calendarDaysDifference } from '../../utils/paymentStatus'
-import { formatMetaPhone } from '../../utils/phone'
-import { MetaWhatsAppProvider } from './meta-whatsapp.provider'
+import { formatEvolutionPhone } from '../../utils/phone'
+import { EvolutionWhatsAppProvider } from './evolution-whatsapp.provider'
 import { MockWhatsAppProvider } from './mock-whatsapp.provider'
 import { WhatsAppError } from './whatsapp.errors'
 import type { WhatsAppProvider } from './whatsapp.provider'
 import {
-  buildOverdueFallbackText,
-  buildOverdueTemplateComponents,
-  buildUpcomingDueFallbackText,
-  buildUpcomingDueTemplateComponents,
+  formatOverdueMessage,
+  formatUpcomingDueMessage,
   WHATSAPP_TEMPLATES,
 } from './whatsapp.templates'
-import type { MetaWebhookPayload, MetaWebhookStatus } from './whatsapp.types'
+import type {
+  EvolutionWebhookPayload,
+  EvolutionWebhookEventData,
+  MetaWebhookPayload,
+  MetaWebhookStatus,
+} from './whatsapp.types'
+
+const STATUS_RANKS: Record<WhatsAppDeliveryStatus, number> = {
+  not_sent: 0,
+  queued: 1,
+  sent: 2,
+  delivered: 3,
+  read: 4,
+  failed: -1,
+}
 
 class WhatsAppService {
   private provider: WhatsAppProvider
@@ -29,12 +45,12 @@ class WhatsAppService {
   }
 
   private createProvider(): WhatsAppProvider {
-    if (env.isWhatsAppEnabled && env.WHATSAPP_ACCESS_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID) {
-      return new MetaWhatsAppProvider({
-        apiVersion: env.WHATSAPP_API_VERSION,
-        phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
-        accessToken: env.WHATSAPP_ACCESS_TOKEN,
-        appSecret: env.WHATSAPP_APP_SECRET,
+    if (env.isWhatsAppEnabled && env.EVOLUTION_API_URL && env.EVOLUTION_API_KEY) {
+      return new EvolutionWhatsAppProvider({
+        apiUrl: env.EVOLUTION_API_URL,
+        apiKey: env.EVOLUTION_API_KEY,
+        instanceName: env.EVOLUTION_INSTANCE_NAME,
+        webhookSecret: env.EVOLUTION_WEBHOOK_SECRET,
       })
     }
     return new MockWhatsAppProvider(env.isWhatsAppConfigured)
@@ -68,11 +84,9 @@ class WhatsAppService {
       latestNotification: WhatsAppNotificationDoc | null
     }>
   > {
-    // Find active members
     const members = await Member.find({ status: 'active' })
     const memberIds = members.map((m) => m._id)
 
-    // Find unpaid or partial payments
     const payments = await MonthlyPayment.find({
       member: { $in: memberIds },
       status: { $in: ['unpaid', 'partial'] },
@@ -145,7 +159,6 @@ class WhatsAppService {
         const member = memberMap.get(payment.member.toString())
         if (!member) continue
 
-        // Daily dedup key for today
         const dedupKey = `${member.memberId}_FEE_OVERDUE_${today}`
         const latestNotification = await WhatsAppNotification.findOne({ dedupKey })
 
@@ -179,7 +192,7 @@ class WhatsAppService {
       return existing
     }
 
-    const recipientPhone = formatMetaPhone(member.phone)
+    const recipientPhone = formatEvolutionPhone(member.phone)
     if (!recipientPhone) {
       const failedRecord = await WhatsAppNotification.create({
         member: member._id,
@@ -189,6 +202,7 @@ class WhatsAppService {
         dedupKey,
         payment: payment._id,
         templateName: WHATSAPP_TEMPLATES.FEE_DUE_2_DAYS,
+        provider: 'evolution',
         status: 'failed',
         error: 'Invalid recipient phone number',
         failedAt: now,
@@ -201,14 +215,7 @@ class WhatsAppService {
     const dueDateStr = formatDDMMYYYY(payment.dueDate)
     const planName = payment.planName || member.planName || 'Monthly'
 
-    const components = buildUpcomingDueTemplateComponents({
-      memberName: member.fullName,
-      planName,
-      dueDate: dueDateStr,
-      amountDue: amountStr,
-    })
-
-    const fallbackText = buildUpcomingDueFallbackText({
+    const messageText = formatUpcomingDueMessage({
       memberName: member.fullName,
       planName,
       dueDate: dueDateStr,
@@ -224,7 +231,8 @@ class WhatsAppService {
       dedupKey,
       payment: payment._id,
       templateName: WHATSAPP_TEMPLATES.FEE_DUE_2_DAYS,
-      message: fallbackText,
+      message: messageText,
+      provider: 'evolution',
       status: 'queued',
       metadata: {
         amountDue: amountStr,
@@ -242,10 +250,9 @@ class WhatsAppService {
     }
 
     try {
-      const sendResult = await this.provider.sendTemplateMessage({
+      const sendResult = await this.provider.sendTextMessage({
         to: recipientPhone,
-        templateName: WHATSAPP_TEMPLATES.FEE_DUE_2_DAYS,
-        components,
+        text: messageText,
       })
 
       if (sendResult.success) {
@@ -254,7 +261,7 @@ class WhatsAppService {
         notification.sentAt = new Date()
       } else {
         notification.status = 'failed'
-        notification.error = sendResult.error || 'Failed to send template message'
+        notification.error = sendResult.error || 'Failed to send fee due reminder'
         notification.failedAt = new Date()
       }
       await notification.save()
@@ -278,7 +285,6 @@ class WhatsAppService {
     payment: MonthlyPaymentDoc,
     now: Date = new Date(),
   ): Promise<WhatsAppNotificationDoc | null> {
-    // Check payment status first (billing system is single source of truth)
     const balance = payment.dueAmountPaise - payment.amountPaidPaise
     if (balance <= 0 || payment.status === 'paid') {
       return null
@@ -293,7 +299,7 @@ class WhatsAppService {
       return existing
     }
 
-    const recipientPhone = formatMetaPhone(member.phone)
+    const recipientPhone = formatEvolutionPhone(member.phone)
     if (!recipientPhone) {
       const failedRecord = await WhatsAppNotification.create({
         member: member._id,
@@ -303,6 +309,7 @@ class WhatsAppService {
         dedupKey,
         payment: payment._id,
         templateName: WHATSAPP_TEMPLATES.FEE_OVERDUE,
+        provider: 'evolution',
         status: 'failed',
         error: 'Invalid recipient phone number',
         failedAt: now,
@@ -314,14 +321,7 @@ class WhatsAppService {
     const amountStr = paiseToRupees(balance).toLocaleString('en-IN')
     const planName = payment.planName || member.planName || 'Monthly'
 
-    const components = buildOverdueTemplateComponents({
-      memberName: member.fullName,
-      planName,
-      daysOverdue,
-      amountDue: amountStr,
-    })
-
-    const fallbackText = buildOverdueFallbackText({
+    const messageText = formatOverdueMessage({
       memberName: member.fullName,
       planName,
       daysOverdue,
@@ -336,7 +336,8 @@ class WhatsAppService {
       dedupKey,
       payment: payment._id,
       templateName: WHATSAPP_TEMPLATES.FEE_OVERDUE,
-      message: fallbackText,
+      message: messageText,
+      provider: 'evolution',
       status: 'queued',
       metadata: {
         daysOverdue,
@@ -353,10 +354,9 @@ class WhatsAppService {
     }
 
     try {
-      const sendResult = await this.provider.sendTemplateMessage({
+      const sendResult = await this.provider.sendTextMessage({
         to: recipientPhone,
-        templateName: WHATSAPP_TEMPLATES.FEE_OVERDUE,
-        components,
+        text: messageText,
       })
 
       if (sendResult.success) {
@@ -365,7 +365,7 @@ class WhatsAppService {
         notification.sentAt = new Date()
       } else {
         notification.status = 'failed'
-        notification.error = sendResult.error || 'Failed to send overdue template message'
+        notification.error = sendResult.error || 'Failed to send overdue reminder'
         notification.failedAt = new Date()
       }
       await notification.save()
@@ -458,7 +458,7 @@ class WhatsAppService {
   }
 
   /**
-   * Internal queue processor for a campaign.
+   * Internal queue processor for a campaign with sequential rate pacing.
    */
   private async processCampaignQueue(
     campaignId: string,
@@ -472,8 +472,15 @@ class WhatsAppService {
     let sentCount = 0
     let failedCount = 0
 
-    for (const member of recipients) {
-      const recipientPhone = formatMetaPhone(member.phone)
+    for (let i = 0; i < recipients.length; i++) {
+      const member = recipients[i]
+
+      // Gentle rate control between consecutive dispatches in production
+      if (i > 0 && !env.isTest) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+
+      const recipientPhone = formatEvolutionPhone(member.phone)
       if (!recipientPhone) {
         await WhatsAppNotification.create({
           member: member._id,
@@ -483,6 +490,7 @@ class WhatsAppService {
           campaign: campaign._id,
           message,
           mediaUrl: mediaUrl || null,
+          provider: 'evolution',
           status: 'failed',
           error: 'Invalid recipient phone number',
           failedAt: new Date(),
@@ -499,6 +507,7 @@ class WhatsAppService {
         campaign: campaign._id,
         message,
         mediaUrl: mediaUrl || null,
+        provider: 'evolution',
         status: 'queued',
       })
 
@@ -555,47 +564,66 @@ class WhatsAppService {
   }
 
   /**
-   * Processes webhook delivery status callbacks from Meta.
+   * Updates notification status with strict state hierarchy and idempotent campaign stats.
+   * Prevents out-of-order events from downgrading a stronger known status.
    */
-  async handleWebhookStatus(statusObj: MetaWebhookStatus): Promise<boolean> {
-    const { id: messageId, status, timestamp, errors } = statusObj
+  async updateNotificationStatus(
+    messageId: string,
+    newStatus: WhatsAppDeliveryStatus,
+    timestamp: Date = new Date(),
+    errorDetails?: string,
+  ): Promise<boolean> {
+    if (!messageId) return false
 
     const notification = await WhatsAppNotification.findOne({ messageId })
-    if (!notification) {
-      // Notification may have been sent externally or messageId not mapped yet
+    if (!notification) return false
+
+    const prevStatus = notification.status
+    const prevRank = STATUS_RANKS[prevStatus] ?? 0
+    const newRank = STATUS_RANKS[newStatus] ?? 0
+
+    // Hierarchy rule: do not downgrade higher status
+    // read (4) > delivered (3) > sent (2) > queued (1) > not_sent (0)
+    // If incoming is failed, cannot fail a message that was already delivered or read
+    if (newStatus === 'failed') {
+      if (prevRank >= 3) {
+        // Already delivered or read: do not overwrite with failed
+        return false
+      }
+    } else if (newRank <= prevRank) {
+      // Incoming rank is lower than or equal to current rank: no downgrade
       return false
     }
 
-    const previousStatus = notification.status
-    const eventTime = new Date(Number(timestamp) * 1000)
+    // Apply the new status
+    notification.status = newStatus
 
-    if (status === 'delivered') {
-      notification.status = 'delivered'
-      notification.deliveredAt = eventTime
-    } else if (status === 'read') {
-      notification.status = 'read'
-      notification.readAt = eventTime
-      if (!notification.deliveredAt) notification.deliveredAt = eventTime
-    } else if (status === 'failed') {
-      notification.status = 'failed'
-      notification.failedAt = eventTime
-      notification.error = errors?.[0]?.message || errors?.[0]?.title || 'Delivery failed'
-    } else if (status === 'sent') {
-      notification.status = 'sent'
-      if (!notification.sentAt) notification.sentAt = eventTime
+    if (newStatus === 'sent' && !notification.sentAt) {
+      notification.sentAt = timestamp
+    } else if (newStatus === 'delivered') {
+      notification.deliveredAt = timestamp
+    } else if (newStatus === 'read') {
+      notification.readAt = timestamp
+      if (!notification.deliveredAt) notification.deliveredAt = timestamp
+    } else if (newStatus === 'failed') {
+      notification.failedAt = timestamp
+      if (errorDetails) notification.error = errorDetails
     }
 
     await notification.save()
 
-    // If part of a campaign, update campaign aggregated stats
+    // Idempotent campaign stats updates
     if (notification.campaign) {
       const updateQuery: Record<string, number> = {}
-      if (status === 'delivered' && previousStatus !== 'delivered' && previousStatus !== 'read') {
+
+      if (newStatus === 'delivered' && prevRank < 3) {
         updateQuery['stats.delivered'] = 1
-      } else if (status === 'read' && previousStatus !== 'read') {
+      } else if (newStatus === 'read' && prevRank < 4) {
         updateQuery['stats.read'] = 1
-        if (previousStatus !== 'delivered') updateQuery['stats.delivered'] = 1
-      } else if (status === 'failed' && previousStatus !== 'failed') {
+        if (prevRank < 3) {
+          updateQuery['stats.delivered'] = 1
+        }
+      } else if (newStatus === 'failed' && prevStatus !== 'failed') {
         updateQuery['stats.failed'] = 1
       }
 
@@ -610,7 +638,100 @@ class WhatsAppService {
   }
 
   /**
-   * Ingests full Meta webhook payload.
+   * Ingests Evolution API webhook payloads.
+   * Supports MESSAGES_UPDATE, SEND_MESSAGE, SEND_MESSAGE_UPDATE, CONNECTION_UPDATE.
+   */
+  async processEvolutionWebhookPayload(payload: EvolutionWebhookPayload): Promise<number> {
+    if (!payload || typeof payload !== 'object') return 0
+
+    const event = String(payload.event || '').toUpperCase()
+
+    // Connection update logging/handling
+    if (event === 'CONNECTION_UPDATE' || event === 'CONNECTION.UPDATE') {
+      return 1
+    }
+
+    const rawData = payload.data
+    const dataItems: EvolutionWebhookEventData[] = Array.isArray(rawData)
+      ? rawData
+      : rawData && typeof rawData === 'object'
+        ? [rawData as EvolutionWebhookEventData]
+        : []
+
+    let processed = 0
+
+    for (const item of dataItems) {
+      const messageId =
+        item.key?.id ||
+        item.keyId ||
+        item.id ||
+        item.messageId ||
+        (typeof item.key === 'string' ? item.key : undefined)
+
+      if (!messageId) continue
+
+      const rawStatus = item.update?.status ?? item.status
+
+      let mappedStatus: WhatsAppDeliveryStatus | null = null
+      if (typeof rawStatus === 'number') {
+        if (rawStatus === 0) mappedStatus = 'failed'
+        else if (rawStatus === 1) mappedStatus = 'queued'
+        else if (rawStatus === 2) mappedStatus = 'sent'
+        else if (rawStatus === 3) mappedStatus = 'delivered'
+        else if (rawStatus === 4 || rawStatus === 5) mappedStatus = 'read'
+      } else if (typeof rawStatus === 'string') {
+        const upper = rawStatus.toUpperCase()
+        if (upper === 'ERROR' || upper === 'FAILED') mappedStatus = 'failed'
+        else if (upper === 'PENDING' || upper === 'QUEUED') mappedStatus = 'queued'
+        else if (upper === 'SERVER_ACK' || upper === 'SENT') mappedStatus = 'sent'
+        else if (upper === 'DELIVERY_ACK' || upper === 'DELIVERED') mappedStatus = 'delivered'
+        else if (upper === 'READ' || upper === 'PLAYED') mappedStatus = 'read'
+      }
+
+      if (!mappedStatus) continue
+
+      let timestamp = new Date()
+      const rawTimestamp = item.messageTimestamp || item.date_time || payload.date_time
+      if (rawTimestamp) {
+        const num = Number(rawTimestamp)
+        if (!Number.isNaN(num) && num > 0) {
+          timestamp = new Date(num > 10000000000 ? num : num * 1000)
+        } else {
+          const parsed = new Date(String(rawTimestamp))
+          if (!Number.isNaN(parsed.getTime())) timestamp = parsed
+        }
+      }
+
+      let errorMsg: string | undefined
+      if (typeof item.error === 'string') errorMsg = item.error
+      else if (item.error && typeof item.error === 'object' && item.error.message) {
+        errorMsg = item.error.message
+      }
+
+      const handled = await this.updateNotificationStatus(
+        messageId,
+        mappedStatus,
+        timestamp,
+        errorMsg,
+      )
+      if (handled) processed += 1
+    }
+
+    return processed
+  }
+
+  /**
+   * Backward-compatible handler for Meta webhook callbacks and test suites.
+   */
+  async handleWebhookStatus(statusObj: MetaWebhookStatus): Promise<boolean> {
+    const { id: messageId, status, timestamp, errors } = statusObj
+    const eventTime = new Date(Number(timestamp) * 1000)
+    const errorMsg = errors?.[0]?.message || errors?.[0]?.title
+    return this.updateNotificationStatus(messageId, status, eventTime, errorMsg)
+  }
+
+  /**
+   * Backward-compatible ingest of Meta webhook payloads.
    */
   async processMetaWebhookPayload(payload: MetaWebhookPayload): Promise<number> {
     let processed = 0
