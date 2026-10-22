@@ -12,6 +12,7 @@ export function serializePlan(plan: MembershipPlan) {
     id: plan.id,
     name: plan.name,
     durationMonths: plan.durationMonths,
+    durationDays: plan.durationDays ?? null,
     pricePaise: plan.pricePaise,
     price: paiseToRupees(plan.pricePaise),
   }
@@ -32,6 +33,7 @@ export function serializeMember(member: MemberDoc) {
     planId: member.planId ?? plan?.id ?? null,
     planName: member.planName ?? plan?.name ?? null,
     planDurationMonths: member.planDurationMonths ?? plan?.durationMonths ?? null,
+    planDurationDays: member.planDurationDays ?? plan?.durationDays ?? null,
     planPricePaise: member.planPricePaise ?? plan?.pricePaise ?? null,
     nextBillingDate: member.nextBillingDate ? member.nextBillingDate.toISOString() : null,
     joiningDate: member.joiningDate ? member.joiningDate.toISOString() : null,
@@ -90,6 +92,7 @@ export function serializePayment(
     planId: payment.planId ?? plan?.id ?? null,
     planName: payment.planName ?? plan?.name ?? null,
     durationMonths: payment.durationMonths ?? null,
+    durationDays: payment.durationDays ?? null,
     planPricePaise: payment.planPricePaise ?? null,
     periodStart: payment.periodStart ? payment.periodStart.toISOString() : null,
     periodEnd: payment.periodEnd ? payment.periodEnd.toISOString() : null,

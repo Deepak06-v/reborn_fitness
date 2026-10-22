@@ -36,10 +36,26 @@ describe('membership plan catalogue', () => {
   it('exposes the catalogue to authenticated admins', async () => {
     const response = await session.agent.get('/api/admin/plans').expect(200)
     const ids = response.body.plans.map((plan: { id: string }) => plan.id)
-    expect(ids).toHaveLength(15)
+    expect(ids).toHaveLength(18)
     expect(ids).toContain('monthly')
+    expect(ids).toContain('monthly-1500')
+    expect(ids).toContain('monthly-2000')
+    expect(ids).toContain('15days-500')
     expect(ids).toContain('two-months')
     expect(ids).toContain('fifteen-months')
+
+    const monthly1500 = response.body.plans.find((p: { id: string }) => p.id === 'monthly-1500')
+    expect(monthly1500.pricePaise).toBe(150000)
+    expect(monthly1500.durationMonths).toBe(1)
+
+    const monthly2000 = response.body.plans.find((p: { id: string }) => p.id === 'monthly-2000')
+    expect(monthly2000.pricePaise).toBe(200000)
+    expect(monthly2000.durationMonths).toBe(1)
+
+    const fifteenDays = response.body.plans.find((p: { id: string }) => p.id === '15days-500')
+    expect(fifteenDays.pricePaise).toBe(50000)
+    expect(fifteenDays.durationDays).toBe(15)
+
     const yearly = response.body.plans.find((plan: { id: string }) => plan.id === 'yearly')
     expect(yearly.pricePaise).toBe(1000000)
     expect(yearly.durationMonths).toBe(12)
@@ -58,9 +74,14 @@ describe('membership plan catalogue', () => {
       expect(site, `website plan "${plan.id}" must exist`).toBeTruthy()
       // Advertised offer price (whole rupees) must equal the billed paise price.
       expect(site!.offerPrice * 100).toBe(plan.pricePaise)
-      // Duration expressed in the marketing copy must match the billed months.
-      const advertisedMonths = Number(/(\d+)\s*month/i.exec(site!.duration)?.[1])
-      expect(advertisedMonths).toBe(plan.durationMonths)
+      // Duration expressed in marketing copy matches billed months or days.
+      if (plan.durationDays) {
+        const advertisedDays = Number(/(\d+)\s*day/i.exec(site!.duration)?.[1])
+        expect(advertisedDays).toBe(plan.durationDays)
+      } else {
+        const advertisedMonths = Number(/(\d+)\s*month/i.exec(site!.duration)?.[1])
+        expect(advertisedMonths).toBe(plan.durationMonths)
+      }
     }
   })
 })

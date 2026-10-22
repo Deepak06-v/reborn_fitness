@@ -18,6 +18,9 @@ interface MemberFormModalProps {
 
 const planDurationMonthsMap: Record<string, number> = {
   monthly: 1,
+  'monthly-1500': 1,
+  'monthly-2000': 1,
+  '15days-500': 0,
   'two-months': 2,
   'three-months': 3,
   'four-months': 4,
@@ -32,6 +35,10 @@ const planDurationMonthsMap: Record<string, number> = {
   'thirteen-months': 13,
   'fourteen-months': 14,
   'fifteen-months': 15,
+}
+
+const planDurationDaysMap: Record<string, number> = {
+  '15days-500': 15,
 }
 
 export function MemberFormModal({
@@ -78,9 +85,10 @@ export function MemberFormModal({
 
   const selectedPlan = plans.find((plan) => plan.id === planId) ?? null
   const selectedDurationMonths = selectedPlan ? (planDurationMonthsMap[selectedPlan.id] ?? 1) : 0
+  const selectedDurationDays = selectedPlan ? (planDurationDaysMap[selectedPlan.id] ?? 0) : 0
   const calculatedEndDate =
     selectedPlan && joiningDate
-      ? calculateMembershipEndDate(joiningDate, selectedDurationMonths)
+      ? calculateMembershipEndDate(joiningDate, selectedDurationMonths, selectedDurationDays)
       : null
 
   const onSubmit = async (event: FormEvent) => {

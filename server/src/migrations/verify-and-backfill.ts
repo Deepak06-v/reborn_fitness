@@ -1,7 +1,7 @@
 import { connectDatabase } from '../config/db'
 import { Member } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
-import { addMonthsAnchored, istDayOfMonth, monthStart } from '../utils/month'
+import { addDays, addMonthsAnchored, istDayOfMonth, monthStart } from '../utils/month'
 
 export interface MigrationSummary {
   dryRun: boolean
@@ -57,7 +57,9 @@ export async function runVerifyAndBackfill(apply = false): Promise<MigrationSumm
         const anchorDay = memberAnchorMap.get(payment.member.toString()) ?? 1
         const start = payment.periodStart ?? monthStart(payment.billingMonth)
         const duration = payment.durationMonths ?? 1
-        const calculatedEnd = addMonthsAnchored(start, duration, anchorDay)
+        const calculatedEnd = payment.durationDays
+          ? addDays(start, payment.durationDays)
+          : addMonthsAnchored(start, duration, anchorDay)
         payment.periodEnd = calculatedEnd
         await payment.save()
         summary.backfilledPeriodEnd += 1

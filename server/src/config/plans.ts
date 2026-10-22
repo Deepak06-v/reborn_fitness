@@ -12,14 +12,19 @@
 export interface MembershipPlan {
   id: string
   name: string
-  /** Length of one billing period, in months. */
+  /** Length of one billing period, in months. 0 for sub-month plans. */
   durationMonths: number
+  /** Length of one billing period in calendar days, when not whole months. */
+  durationDays?: number
   /** Price of one billing period, in integer paise. */
   pricePaise: number
 }
 
 export const PLANS: readonly MembershipPlan[] = [
   { id: 'monthly', name: 'Monthly', durationMonths: 1, pricePaise: 100_000 },
+  { id: 'monthly-1500', name: 'Monthly – ₹1,500', durationMonths: 1, pricePaise: 150_000 },
+  { id: 'monthly-2000', name: 'Monthly – ₹2,000', durationMonths: 1, pricePaise: 200_000 },
+  { id: '15days-500', name: '15 Days – ₹500', durationMonths: 0, durationDays: 15, pricePaise: 50_000 },
   { id: 'two-months', name: '2 Months', durationMonths: 2, pricePaise: 200_000 },
   { id: 'three-months', name: '3 Months', durationMonths: 3, pricePaise: 270_000 },
   { id: 'four-months', name: '4 Months', durationMonths: 4, pricePaise: 400_000 },

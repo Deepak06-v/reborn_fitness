@@ -34,6 +34,7 @@ export interface MonthlyPaymentDoc extends Document<Types.ObjectId> {
   planId: string | null
   planName: string | null
   durationMonths: number | null
+  durationDays?: number | null
   planPricePaise: number | null
   /** Inclusive first day of the billing period. */
   periodStart: Date | null
@@ -85,7 +86,8 @@ const monthlyPaymentSchema = new Schema<MonthlyPaymentDoc>(
     invoiceNumber: { type: String, default: null, trim: true },
     planId: { type: String, default: null, trim: true },
     planName: { type: String, default: null, trim: true, maxlength: 60 },
-    durationMonths: { type: Number, default: null, min: 1 },
+    durationMonths: { type: Number, default: null, min: 0 },
+    durationDays: { type: Number, default: null, min: 1 },
     planPricePaise: { type: Number, default: null, min: 0 },
     periodStart: { type: Date, default: null },
     periodEnd: { type: Date, default: null },
@@ -106,12 +108,28 @@ const monthlyPaymentSchema = new Schema<MonthlyPaymentDoc>(
   { timestamps: true, versionKey: false },
 )
 
-// Hard guarantee: one bill per member per month (prevents duplicate billing).
-monthlyPaymentSchema.index({ member: 1, billingMonth: 1 }, { unique: true })
+// Guarantee: one bill per member per period start date (prevents duplicate billing).
+monthlyPaymentSchema.index({ member: 1, periodStart: 1 }, { unique: true, sparse: true })
+monthlyPaymentSchema.index({ member: 1, billingMonth: 1 })
 monthlyPaymentSchema.index({ billingMonth: 1, status: 1 })
 monthlyPaymentSchema.index({ dueDate: 1 })
 // Invoice numbers must be unique; sparse so legacy rows without one are exempt.
 monthlyPaymentSchema.index({ invoiceNumber: 1 }, { unique: true, sparse: true })
+
+export async function ensureMonthlyPaymentIndexes(): Promise<void> {
+  try {
+    const col = MonthlyPayment.collection
+    const indexes = await col.indexes().catch(() => [])
+    const oldUniqueIndex = indexes.find(
+      (idx) => idx.name === 'member_1_billingMonth_1' && idx.unique,
+    )
+    if (oldUniqueIndex) {
+      await col.dropIndex('member_1_billingMonth_1').catch(() => undefined)
+    }
+  } catch {
+    // Non-fatal if collection doesn't exist yet
+  }
+}
 
 export const MonthlyPayment =
   (models.MonthlyPayment as Model<MonthlyPaymentDoc>) ??

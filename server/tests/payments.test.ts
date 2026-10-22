@@ -363,3 +363,120 @@ describe('payments CSV export', () => {
     expect(rows[0]).toContain('1000.00')
   })
 })
+
+describe('new membership plans (Monthly-1500, Monthly-2000, 15days-500)', () => {
+  it('bills Monthly – ₹1,500 with a 1-month duration and 150000 paise fee', async () => {
+    const member = await addMember({ joiningDate: '2026-08-10', planId: 'monthly-1500' })
+    const payments = await memberPayments(member.id)
+    expect(payments.length).toBeGreaterThanOrEqual(1)
+    const sorted = [...payments].sort(
+      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
+    )
+    const first = sorted[0]
+    expect(first.planId).toBe('monthly-1500')
+    expect(first.planName).toBe('Monthly – ₹1,500')
+    expect(first.dueAmountPaise).toBe(150000)
+    expect(first.durationMonths).toBe(1)
+    expect(istDayOf(first.periodStart)).toBe('2026-08-10')
+    expect(istDayOf(first.periodEnd)).toBe('2026-09-10')
+  })
+
+  it('bills Monthly – ₹2,000 with a 1-month duration and 200000 paise fee', async () => {
+    const member = await addMember({ joiningDate: '2026-08-10', planId: 'monthly-2000' })
+    const payments = await memberPayments(member.id)
+    expect(payments.length).toBeGreaterThanOrEqual(1)
+    const sorted = [...payments].sort(
+      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
+    )
+    const first = sorted[0]
+    expect(first.planId).toBe('monthly-2000')
+    expect(first.planName).toBe('Monthly – ₹2,000')
+    expect(first.dueAmountPaise).toBe(200000)
+    expect(first.durationMonths).toBe(1)
+    expect(istDayOf(first.periodStart)).toBe('2026-08-10')
+    expect(istDayOf(first.periodEnd)).toBe('2026-09-10')
+  })
+
+  it('bills 15 Days – ₹500 with exactly 15 days duration and 50000 paise fee', async () => {
+    const member = await addMember({ joiningDate: '2026-10-01', planId: '15days-500' })
+    const payments = await memberPayments(member.id)
+    expect(payments.length).toBeGreaterThanOrEqual(1)
+    const sorted = [...payments].sort(
+      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
+    )
+    const first = sorted[0]
+    expect(first.planId).toBe('15days-500')
+    expect(first.planName).toBe('15 Days – ₹500')
+    expect(first.dueAmountPaise).toBe(50000)
+    expect(first.durationDays).toBe(15)
+    expect(istDayOf(first.periodStart)).toBe('2026-10-01')
+    expect(istDayOf(first.periodEnd)).toBe('2026-10-16')
+    expect(istDayOf(first.dueDate)).toBe('2026-10-01')
+  })
+
+  it('generates consecutive 15-day billing periods without duplicate key collisions', async () => {
+    // Joining 35 days ago should generate 3 consecutive periods:
+    // Period 1: day -35 to day -20
+    // Period 2: day -20 to day -5
+    // Period 3: day -5 to day +10 (current period)
+    const member = await addMember({ joiningDate: istDay(-35), planId: '15days-500' })
+    const payments = await memberPayments(member.id)
+    expect(payments.length).toBeGreaterThanOrEqual(3)
+
+    // Sort ascending by period start
+    const sorted = [...payments].sort(
+      (a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime(),
+    )
+    for (let i = 0; i < sorted.length - 1; i += 1) {
+      expect(sorted[i].dueAmountPaise).toBe(50000)
+      expect(sorted[i].durationDays).toBe(15)
+      // The end of one 15-day period matches the start of the next period
+      expect(istDayOf(sorted[i].periodEnd)).toBe(istDayOf(sorted[i + 1].periodStart))
+    }
+  })
+
+  it('calculates 15-day periods correctly across month and year boundaries', async () => {
+    // Member joining Dec 20, 2026
+    const member = await addMember({ joiningDate: '2026-12-20', planId: '15days-500' })
+    const payments = await memberPayments(member.id)
+    const first = payments[0]
+    expect(istDayOf(first.periodStart)).toBe('2026-12-20')
+    // Dec 20 + 15 days = Jan 04, 2027
+    expect(istDayOf(first.periodEnd)).toBe('2027-01-04')
+  })
+
+  it('supports partial and full payments and overdue state for 15-day plans', async () => {
+    // 1. Past-due bill: partial payment keeps status 'overdue' with reduced balance
+    const overdueMember = await addMember({
+      phone: '9876500001',
+      joiningDate: istDay(-20),
+      planId: '15days-500',
+    })
+    const overduePayments = await memberPayments(overdueMember.id)
+    const overdueBill = overduePayments[0]
+    expect(overdueBill.status).toBe('overdue')
+
+    const partialOverdue = await record(overdueBill.id, { amountPaise: 20000 })
+    expect(partialOverdue.amountPaidPaise).toBe(20000)
+    expect(partialOverdue.balancePaise).toBe(30000)
+    expect(partialOverdue.status).toBe('overdue')
+
+    const paidOverdue = await record(overdueBill.id, { amountPaise: 30000 })
+    expect(paidOverdue.amountPaidPaise).toBe(50000)
+    expect(paidOverdue.balancePaise).toBe(0)
+    expect(paidOverdue.status).toBe('paid')
+
+    // 2. Future-due bill: partial payment sets status 'partial'
+    const futureMember = await addMember({
+      phone: '9876500002',
+      joiningDate: istDay(5),
+      planId: '15days-500',
+    })
+    const futurePayments = await memberPayments(futureMember.id)
+    const futureBill = futurePayments[0]
+    const partialFuture = await record(futureBill.id, { amountPaise: 20000, paymentDate: istDay() })
+    expect(partialFuture.amountPaidPaise).toBe(20000)
+    expect(partialFuture.balancePaise).toBe(30000)
+    expect(partialFuture.status).toBe('partial')
+  })
+})

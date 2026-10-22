@@ -17,6 +17,7 @@ export interface MemberDoc extends Document<Types.ObjectId> {
   /** Plan name snapshotted from the catalogue at selection time. */
   planName: string | null
   planDurationMonths: number | null
+  planDurationDays?: number | null
   /** Price of one billing period at selection time, in integer paise. */
   planPricePaise: number | null
   /** First day of the current/next billing period; null when not scheduled. */
@@ -45,7 +46,8 @@ const memberSchema = new Schema<MemberDoc, MemberModel>(
     membershipType: { type: String, default: null, trim: true, maxlength: 60 },
     planId: { type: String, default: null, trim: true },
     planName: { type: String, default: null, trim: true, maxlength: 60 },
-    planDurationMonths: { type: Number, default: null, min: 1 },
+    planDurationMonths: { type: Number, default: null, min: 0 },
+    planDurationDays: { type: Number, default: null, min: 1 },
     planPricePaise: { type: Number, default: null, min: 0 },
     nextBillingDate: { type: Date, default: null },
     joiningDate: { type: Date, required: true },

@@ -4,6 +4,7 @@ import { nextSequence } from '../models/Counter'
 import { getPlan } from '../config/plans'
 import { env } from '../config/env'
 import {
+  addDays,
   addMonthsAnchored,
   currentMonth,
   istDayOfMonth,
@@ -22,6 +23,7 @@ interface PeriodPlan {
   planId: string | null
   planName: string | null
   durationMonths: number
+  durationDays?: number
   /** Period price in paise; null means "use the member's own monthly fee". */
   planPricePaise: number | null
   dueAmountPaise: number
@@ -34,6 +36,7 @@ function planForMember(member: MemberDoc): PeriodPlan {
       planId: plan.id,
       planName: plan.name,
       durationMonths: plan.durationMonths,
+      durationDays: plan.durationDays,
       planPricePaise: plan.pricePaise,
       dueAmountPaise: plan.pricePaise,
     }
@@ -41,10 +44,22 @@ function planForMember(member: MemberDoc): PeriodPlan {
   return {
     planId: null,
     planName: null,
-    durationMonths: 1,
+    durationMonths: member.planDurationMonths ?? 1,
+    durationDays: member.planDurationDays ?? undefined,
     planPricePaise: null,
     dueAmountPaise: member.monthlyFeePaise,
   }
+}
+
+function computePeriodEnd(
+  start: Date,
+  planInfo: { durationMonths: number; durationDays?: number },
+  anchorDay: number,
+): Date {
+  if (planInfo.durationDays && planInfo.durationDays > 0) {
+    return addDays(start, planInfo.durationDays)
+  }
+  return addMonthsAnchored(start, planInfo.durationMonths, anchorDay)
 }
 
 /**
@@ -56,17 +71,20 @@ function planForMember(member: MemberDoc): PeriodPlan {
  * so retries and duplicate calls never double-bill.
  */
 export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPaymentDoc> {
-  const billingMonth = currentMonth(member.joiningDate)
-  const existing = await MonthlyPayment.findOne({ member: member._id, billingMonth })
+  const periodStart = member.joiningDate
+  const billingMonth = currentMonth(periodStart)
+  const existing = await MonthlyPayment.findOne({
+    member: member._id,
+    $or: [{ periodStart }, { billingMonth }],
+  })
   if (existing) {
     if (existing.periodEnd) member.nextBillingDate = existing.periodEnd
     return existing
   }
 
   const planInfo = planForMember(member)
-  const periodStart = member.joiningDate
   const anchorDay = istDayOfMonth(periodStart)
-  const periodEnd = addMonthsAnchored(periodStart, planInfo.durationMonths, anchorDay)
+  const periodEnd = computePeriodEnd(periodStart, planInfo, anchorDay)
 
   try {
     return await MonthlyPayment.create({
@@ -77,6 +95,7 @@ export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPay
       planId: planInfo.planId,
       planName: planInfo.planName,
       durationMonths: planInfo.durationMonths,
+      durationDays: planInfo.durationDays ?? null,
       planPricePaise: planInfo.planPricePaise,
       periodStart,
       periodEnd,
@@ -88,7 +107,10 @@ export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPay
   } catch (error) {
     // A concurrent insert already created it — fall back to the stored record.
     if (isDuplicateKeyError(error)) {
-      const raced = await MonthlyPayment.findOne({ member: member._id, billingMonth })
+      const raced = await MonthlyPayment.findOne({
+        member: member._id,
+        $or: [{ periodStart }, { billingMonth }],
+      })
       if (raced) return raced
     }
     throw error
@@ -162,15 +184,18 @@ export async function reconcileMemberBilling(
 
   let created = 0
   let cursorStart = periodStartOf(latest)
-  let cursorDuration = latest.durationMonths ?? planInfo.durationMonths
-  let nextStart = addMonthsAnchored(cursorStart, cursorDuration, anchorDay)
+  const cursorDurationDays = latest.durationDays ?? planInfo.durationDays
+  const cursorDurationMonths = latest.durationMonths ?? planInfo.durationMonths
+
+  let nextStart = cursorDurationDays && cursorDurationDays > 0
+    ? addDays(cursorStart, cursorDurationDays)
+    : addMonthsAnchored(cursorStart, cursorDurationMonths, anchorDay)
 
   if (member.status === 'active') {
     let guard = 0
     while (nextStart.getTime() <= now.getTime() && guard < MAX_PERIODS_PER_RECONCILE) {
       guard += 1
-      const duration = planInfo.durationMonths
-      const nextEnd = addMonthsAnchored(nextStart, duration, anchorDay)
+      const nextEnd = computePeriodEnd(nextStart, planInfo, anchorDay)
       const billingMonth = currentMonth(nextStart)
       try {
         await MonthlyPayment.create({
@@ -180,7 +205,8 @@ export async function reconcileMemberBilling(
           invoiceNumber: await assignInvoiceNumber(),
           planId: planInfo.planId,
           planName: planInfo.planName,
-          durationMonths: duration,
+          durationMonths: planInfo.durationMonths,
+          durationDays: planInfo.durationDays ?? null,
           planPricePaise: planInfo.planPricePaise,
           periodStart: nextStart,
           periodEnd: nextEnd,
@@ -195,18 +221,20 @@ export async function reconcileMemberBilling(
           // A concurrent run already created this period — resume from it.
           const existing = await MonthlyPayment.findOne({
             member: member._id,
-            billingMonth,
+            periodStart: nextStart,
           })
           if (!existing) throw error
           cursorStart = periodStartOf(existing)
-          cursorDuration = existing.durationMonths ?? duration
-          nextStart = addMonthsAnchored(cursorStart, cursorDuration, anchorDay)
+          const existingDurationDays = existing.durationDays ?? planInfo.durationDays
+          const existingDurationMonths = existing.durationMonths ?? planInfo.durationMonths
+          nextStart = existingDurationDays && existingDurationDays > 0
+            ? addDays(cursorStart, existingDurationDays)
+            : addMonthsAnchored(cursorStart, existingDurationMonths, anchorDay)
           continue
         }
         throw error
       }
       cursorStart = nextStart
-      cursorDuration = duration
       nextStart = nextEnd
     }
   }

@@ -60,6 +60,15 @@ export function istDayStart(date: Date): Date {
 }
 
 /**
+ * Adds whole calendar days to a date in Asia/Kolkata.
+ * Returns the first instant of that day in IST (00:00:00+05:30).
+ */
+export function addDays(date: Date, days: number): Date {
+  const start = istDayStart(date)
+  return new Date(start.getTime() + days * 86_400_000)
+}
+
+/**
  * Adds whole months to a date in Asia/Kolkata, clamping the day of month when
  * the target month is shorter (e.g. 31 Jan + 1 month -> 28/29 Feb). The result
  * is the first instant of that day in IST, mirroring monthStart().

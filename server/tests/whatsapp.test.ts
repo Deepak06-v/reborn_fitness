@@ -462,4 +462,101 @@ describe('WhatsApp Notification Module', () => {
       expect(campaignsRes.body.items[0].name).toBe('Gym Holiday Announcement')
     })
   })
+
+  describe('Reminders with New Plans (15 Days - ₹500, Monthly - ₹1,500, Monthly - ₹2,000)', () => {
+    it('sends upcoming fee reminder for 15 Days – ₹500 with exact plan name and ₹500 fee', async () => {
+      const now = new Date()
+      const day2Date = new Date(`${istDay(2)}T00:00:00+05:30`)
+
+      const member = await Member.create({
+        memberId: 'RBF-0020',
+        fullName: 'Vikram 15-Day',
+        phone: '9876543220',
+        planId: '15days-500',
+        planName: '15 Days – ₹500',
+        monthlyFeePaise: 50000,
+        planDurationMonths: 0,
+        planDurationDays: 15,
+        joiningDate: new Date('2026-10-01T00:00:00+05:30'),
+        status: 'active',
+      })
+      const payment = await MonthlyPayment.create({
+        member: member._id,
+        memberId: member.memberId,
+        invoiceNumber: 'INV-TEST-0020',
+        billingMonth: '2026-10',
+        planId: '15days-500',
+        planName: '15 Days – ₹500',
+        durationDays: 15,
+        dueDate: day2Date,
+        dueAmountPaise: 50000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      const upcoming = await whatsAppService.getUpcomingFeeDueMembers(now)
+      const found = upcoming.find((u) => u.member.memberId === 'RBF-0020')
+      expect(found).toBeDefined()
+      expect(found?.payment.dueAmountPaise).toBe(50000)
+
+      const notif = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
+      expect(notif).not.toBeNull()
+      expect(notif?.templateName).toBe('reborn_fee_due_reminder')
+      expect(notif?.message).toContain('₹500')
+      expect(notif?.message).toContain('15 Days – ₹500')
+    })
+
+    it('sends overdue reminder for Monthly – ₹2,000 and stops when balance is paid', async () => {
+      const now = new Date()
+      const overdueDate = new Date(`${istDay(-3)}T00:00:00+05:30`)
+
+      const member = await Member.create({
+        memberId: 'RBF-0021',
+        fullName: 'Anita 2000',
+        phone: '9876543221',
+        planId: 'monthly-2000',
+        planName: 'Monthly – ₹2,000',
+        monthlyFeePaise: 200000,
+        planDurationMonths: 1,
+        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
+        status: 'active',
+      })
+      const payment = await MonthlyPayment.create({
+        member: member._id,
+        memberId: member.memberId,
+        invoiceNumber: 'INV-TEST-0021',
+        billingMonth: '2026-09',
+        planId: 'monthly-2000',
+        planName: 'Monthly – ₹2,000',
+        durationMonths: 1,
+        dueDate: overdueDate,
+        dueAmountPaise: 200000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      // 1. Should be in overdue list
+      let overdue = await whatsAppService.getOverdueMembers(now)
+      let found = overdue.find((o) => o.member.memberId === 'RBF-0021')
+      expect(found).toBeDefined()
+      expect(found?.payment.dueAmountPaise).toBe(200000)
+
+      // 2. Send reminder
+      const notif = await whatsAppService.sendOverdueReminder(member, payment, now)
+      expect(notif).not.toBeNull()
+      expect(notif?.templateName).toBe('reborn_fee_overdue_reminder')
+      expect(notif?.message).toContain('₹2,000')
+      expect(notif?.message).toContain('Monthly – ₹2,000')
+
+      // 3. Mark payment fully paid
+      payment.amountPaidPaise = 200000
+      payment.status = 'paid'
+      await payment.save()
+
+      // 4. Overdue check excludes paid bill
+      overdue = await whatsAppService.getOverdueMembers(now)
+      found = overdue.find((o) => o.member.memberId === 'RBF-0021')
+      expect(found).toBeUndefined()
+    })
+  })
 })

@@ -3,7 +3,7 @@ import { Member, type MemberDoc } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
 import { getPlan } from '../config/plans'
 import { ApiError } from '../utils/errors'
-import { addMonthsClamped, currentMonth } from '../utils/month'
+import { addDays, addMonthsClamped, currentMonth } from '../utils/month'
 import {
   evaluatePaymentStatus,
   outstandingBalance,
@@ -84,6 +84,7 @@ export async function createMember(input: MemberInput): Promise<MemberDoc> {
     planId: plan.id,
     planName: plan.name,
     planDurationMonths: plan.durationMonths,
+    planDurationDays: plan.durationDays ?? null,
     planPricePaise: plan.pricePaise,
     joiningDate: input.joiningDate,
     // The plan catalogue is authoritative: the client-supplied fee is ignored.
@@ -94,7 +95,10 @@ export async function createMember(input: MemberInput): Promise<MemberDoc> {
   try {
     const period = await createInitialPeriod(member)
     member.nextBillingDate =
-      period.periodEnd ?? addMonthsClamped(member.joiningDate, plan.durationMonths)
+      period.periodEnd ??
+      (plan.durationDays
+        ? addDays(member.joiningDate, plan.durationDays)
+        : addMonthsClamped(member.joiningDate, plan.durationMonths))
     await member.save()
   } catch (error) {
     // Compensate: a member without a first bill would be in an inconsistent
@@ -137,6 +141,7 @@ export async function updateMember(
     member.planId = plan.id
     member.planName = plan.name
     member.planDurationMonths = plan.durationMonths
+    member.planDurationDays = plan.durationDays ?? null
     member.planPricePaise = plan.pricePaise
     member.monthlyFeePaise = plan.pricePaise
     // Keep the legacy label aligned unless the caller set it explicitly.
@@ -219,7 +224,9 @@ export async function listMembers(params: ListMembersParams) {
 
   const ids = members.map((member) => member._id)
   const [payments, outstanding] = await Promise.all([
-    MonthlyPayment.find({ member: { $in: ids }, billingMonth: selectedMonth }),
+    MonthlyPayment.find({ member: { $in: ids }, billingMonth: selectedMonth }).sort({
+      periodStart: -1,
+    }),
     MonthlyPayment.aggregate<{ _id: Types.ObjectId; total: number }>([
       { $match: { member: { $in: ids } } },
       {

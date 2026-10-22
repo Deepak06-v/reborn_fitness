@@ -44,13 +44,26 @@ export function formatDateTime(iso: string | null | undefined): string {
 
 /**
  * Calculates membership end date (dd/mm/yyyy) from a YYYY-MM-DD joining date
- * and duration in months, clamping to valid month bounds.
+ * and duration in months or days, clamping to valid month bounds.
  */
 export function calculateMembershipEndDate(
   joiningDateStr: string,
   durationMonths: number,
+  durationDays?: number,
 ): string {
-  if (!joiningDateStr || !durationMonths) return ''
+  if (!joiningDateStr) return ''
+  if (durationDays && durationDays > 0) {
+    const parts = joiningDateStr.split('-').map(Number)
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return ''
+    const [startYear, startMonth, startDay] = parts
+    const startUtc = Date.UTC(startYear, startMonth - 1, startDay)
+    const endUtc = new Date(startUtc + durationDays * 86_400_000)
+    const dd = String(endUtc.getUTCDate()).padStart(2, '0')
+    const mm = String(endUtc.getUTCMonth() + 1).padStart(2, '0')
+    const yyyy = String(endUtc.getUTCFullYear())
+    return `${dd}/${mm}/${yyyy}`
+  }
+  if (!durationMonths) return ''
   const parts = joiningDateStr.split('-').map(Number)
   if (parts.length !== 3 || parts.some(Number.isNaN)) return ''
   const [startYear, startMonth, startDay] = parts

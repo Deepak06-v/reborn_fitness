@@ -2,11 +2,13 @@ import { createApp } from './app'
 import { bootstrapAdmin } from './bootstrap/admin'
 import { connectDatabase } from './config/db'
 import { env } from './config/env'
+import { ensureMonthlyPaymentIndexes } from './models/MonthlyPayment'
 import { reconcileAllBilling, startBillingScheduler } from './services/billing'
 import { startWhatsAppScheduler } from './services/whatsappScheduler'
 
 async function start() {
   await connectDatabase()
+  await ensureMonthlyPaymentIndexes()
   // Ensure the env-configured admin exists before accepting requests.
   await bootstrapAdmin()
   // Recover any billing periods missed while the service was down, then keep

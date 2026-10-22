@@ -10,6 +10,7 @@ export interface Plan {
   id: string
   name: string
   durationMonths: number
+  durationDays?: number | null
   pricePaise: number
   price: number
 }
@@ -33,6 +34,7 @@ export interface Member {
   planId: string | null
   planName: string | null
   planDurationMonths: number | null
+  planDurationDays?: number | null
   planPricePaise: number | null
   nextBillingDate: string | null
   joiningDate: string
@@ -105,6 +107,7 @@ export interface Payment {
   planId: string | null
   planName: string | null
   durationMonths: number | null
+  durationDays?: number | null
   planPricePaise: number | null
   periodStart: string | null
   periodEnd: string | null
