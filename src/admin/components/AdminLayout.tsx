@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   Users,
   X,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/members', label: 'Members', icon: Users, end: false },
   { to: '/admin/payments', label: 'Payments', icon: CalendarClock, end: false },
+  { to: '/admin/whatsapp', label: 'WhatsApp', icon: MessageSquare, end: false },
 ]
 
 export function AdminLayout() {

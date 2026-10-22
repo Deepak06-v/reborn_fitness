@@ -8,6 +8,11 @@ import type {
   PaymentDetailResponse,
   PaymentListResponse,
   Plan,
+  WhatsAppCampaignItem,
+  WhatsAppHistoryItem,
+  WhatsAppOverdueItem,
+  WhatsAppStatusResponse,
+  WhatsAppUpcomingItem,
 } from './types'
 
 export const CSRF_COOKIE = 'reborn.csrf'
@@ -232,6 +237,55 @@ export const adminApi = {
     },
     exportUrl(query: { month?: string; status?: string; search?: string }): string {
       return buildUrl('/payments/export', query)
+    },
+  },
+  whatsapp: {
+    getStatus(): Promise<WhatsAppStatusResponse> {
+      return request<WhatsAppStatusResponse>('/whatsapp/status')
+    },
+    getUpcomingDue(): Promise<{ items: WhatsAppUpcomingItem[]; count: number }> {
+      return request<{ items: WhatsAppUpcomingItem[]; count: number }>('/whatsapp/upcoming-due')
+    },
+    getOverdue(): Promise<{ items: WhatsAppOverdueItem[]; count: number }> {
+      return request<{ items: WhatsAppOverdueItem[]; count: number }>('/whatsapp/overdue')
+    },
+    getCampaigns(): Promise<{ items: WhatsAppCampaignItem[] }> {
+      return request<{ items: WhatsAppCampaignItem[] }>('/whatsapp/campaigns')
+    },
+    getHistory(limit = 50): Promise<{ items: WhatsAppHistoryItem[] }> {
+      return request<{ items: WhatsAppHistoryItem[] }>('/whatsapp/history', { query: { limit } })
+    },
+    previewCampaign(body: {
+      recipientFilter: string
+      planId?: string
+    }): Promise<{ recipientCount: number; sampleRecipients: Array<{ id: string; fullName: string; phone: string }> }> {
+      return request('/whatsapp/campaigns/preview', {
+        method: 'POST',
+        body,
+      })
+    },
+    sendCampaign(body: {
+      name: string
+      message: string
+      mediaUrl?: string | null
+      recipientFilter: string
+      planId?: string
+    }): Promise<{ success: boolean; campaign: { id: string; name: string; recipientCount: number; status: string } }> {
+      return request('/whatsapp/campaigns/send', {
+        method: 'POST',
+        body,
+      })
+    },
+    uploadImage(body: { data: string; mimeType: string }): Promise<{ mediaUrl: string }> {
+      return request<{ mediaUrl: string }>('/whatsapp/upload-image', {
+        method: 'POST',
+        body,
+      })
+    },
+    runReminders(): Promise<{ success: boolean; summary: { upcomingProcessed: number; overdueProcessed: number } }> {
+      return request('/whatsapp/reminders/run', {
+        method: 'POST',
+      })
     },
   },
 }

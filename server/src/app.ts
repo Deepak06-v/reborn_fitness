@@ -1,3 +1,4 @@
+import path from 'node:path'
 import express from 'express'
 import session from 'express-session'
 import MongoStore from 'connect-mongo'
@@ -15,6 +16,8 @@ import membersRouter from './routes/members'
 import paymentsRouter from './routes/payments'
 import dashboardRouter from './routes/dashboard'
 import plansRouter from './routes/plans'
+import whatsappAdminRouter from './routes/whatsappAdmin'
+import whatsappWebhookRouter from './routes/whatsappWebhook'
 
 export function createApp() {
   const app = express()
@@ -35,8 +38,16 @@ export function createApp() {
       credentials: true,
     }),
   )
-  app.use(express.json({ limit: '1mb' }))
+  app.use(
+    express.json({
+      limit: '10mb',
+      verify: (req, _res, buf) => {
+        ;(req as unknown as { rawBody?: Buffer }).rawBody = buf
+      },
+    }),
+  )
   app.use(cookieParser())
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')))
 
   app.use(
     session({
@@ -67,6 +78,9 @@ export function createApp() {
     res.json({ status: 'ok' })
   })
 
+  // Meta WhatsApp Webhook endpoint (unauthenticated, signature-verified)
+  app.use('/api/whatsapp/webhook', whatsappWebhookRouter)
+
   app.use('/api/admin', apiRateLimiter)
   app.use('/api/admin', ensureCsrf, verifyCsrf)
   app.use('/api/admin/auth', authRouter)
@@ -74,6 +88,7 @@ export function createApp() {
   app.use('/api/admin/payments', requireAdmin, paymentsRouter)
   app.use('/api/admin/dashboard', requireAdmin, dashboardRouter)
   app.use('/api/admin/plans', requireAdmin, plansRouter)
+  app.use('/api/admin/whatsapp', requireAdmin, whatsappAdminRouter)
 
   app.use(notFoundHandler)
   app.use(errorHandler)

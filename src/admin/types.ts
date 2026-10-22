@@ -223,3 +223,86 @@ export interface DashboardResponse {
   monthlyTrend: MonthlyTrendPoint[]
   overdueMembers: OverdueMember[]
 }
+
+export type WhatsAppDeliveryStatus =
+  | 'not_sent'
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed'
+
+export interface WhatsAppStatusResponse {
+  isConfigured: boolean
+  isEnabled: boolean
+  apiVersion: string
+  phoneNumberId: string | null
+  webhookPath: string
+}
+
+export interface WhatsAppNotificationState {
+  status: WhatsAppDeliveryStatus
+  sentAt: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  error: string | null
+}
+
+export interface WhatsAppUpcomingItem {
+  paymentId: string
+  memberId: string
+  memberName: string
+  phone: string
+  planName: string
+  dueDate: string
+  dueAmount: number
+  daysLeft: number
+  notification: WhatsAppNotificationState
+}
+
+export interface WhatsAppOverdueItem {
+  paymentId: string
+  memberId: string
+  memberName: string
+  phone: string
+  planName: string
+  dueDate: string
+  dueAmount: number
+  daysOverdue: number
+  notification: WhatsAppNotificationState
+}
+
+export interface WhatsAppCampaignItem {
+  id: string
+  name: string
+  message: string
+  mediaUrl: string | null
+  recipientFilter: string
+  recipientCount: number
+  stats: {
+    sent: number
+    delivered: number
+    read: number
+    failed: number
+  }
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  createdAt: string
+  completedAt: string | null
+}
+
+export interface WhatsAppHistoryItem {
+  id: string
+  memberId: string
+  memberName: string
+  phoneNumber: string
+  type: string
+  status: WhatsAppDeliveryStatus
+  message: string | null
+  mediaUrl: string | null
+  sentAt: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  error: string | null
+  createdAt: string
+}
+

@@ -314,3 +314,86 @@ Fonts: **Space Grotesk** (display), **Inter** (body), **JetBrains Mono** (teleme
   Escape to close, initial focus, and focus restoration
 - `prefers-reduced-motion: reduce` skips all GSAP tweens
 - Skip link, live-region telemetry labels, visible focus rings
+
+## WhatsApp Notifications & Meta Cloud API Setup
+
+REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated directly into the operations console.
+
+### Key Features
+- **Upcoming Fee Reminders**: Identifies active members whose fee is due in exactly 2 days (IST). Runs automatically and deduplicates per member per due date cycle.
+- **Overdue Reminders**: Runs daily for unpaid members. Stops automatically once payment is marked paid. Deduplicates per member per calendar day.
+- **Custom Broadcast Messages**: Targeted broadcasts (All members, Active only, Overdue only, Plan filter) with optional photo/media attachment, recipient count preview, and pre-send confirmation safeguard.
+- **Official Meta Cloud API Provider**: Provider abstraction with mock/safe fallback mode when credentials are not configured.
+- **Delivery Tracking Webhook**: Receives Meta webhook callbacks for `sent`, `delivered`, `read`, and `failed` states, protected by `X-Hub-Signature-256` HMAC validation.
+
+### Meta Setup & Production Activation Guide
+
+Follow these steps to configure production WhatsApp Cloud API credentials:
+
+#### 1. Meta Developer App Setup
+1. Log in to [Meta for Developers](https://developers.facebook.com/).
+2. Click **My Apps** > **Create App**.
+3. Select **Other** as the use case > choose **Business** type.
+4. Name your app (e.g. `Reborn Fitness Automation`) and associate it with your Meta Business Account.
+5. In the App Dashboard, click **Set up** on the **WhatsApp** tile.
+
+#### 2. WhatsApp Business Account (WABA) & Phone Number ID
+1. In the WhatsApp Getting Started page, locate your test/production credentials:
+   - **Phone Number ID**: Numeric ID associated with your gym's WhatsApp number.
+   - **WhatsApp Business Account ID (WABA ID)**: Numeric ID of your WABA.
+2. In production, add and verify your gym's official phone number under **WhatsApp** > **Configuration** > **Phone numbers**.
+
+#### 3. System User & Permanent Production Access Token
+1. Go to [Meta Business Settings](https://business.facebook.com/settings).
+2. Navigate to **Users** > **System Users** and click **Add**.
+3. Assign the **Admin** role to the system user (e.g. `reborn-backend-system-user`).
+4. Click **Generate New Token**, select your WhatsApp App, and choose permissions:
+   - `whatsapp_business_messaging`
+   - `whatsapp_business_management`
+5. Set token expiration to **Permanent** (Never expires). Copy this token — this is your `WHATSAPP_ACCESS_TOKEN`.
+
+#### 4. App Secret & Webhook Verify Token
+1. In Meta Developer App, go to **App Settings** > **Basic** > view **App Secret**. This is your `WHATSAPP_APP_SECRET`.
+2. Choose a custom secure string for `WHATSAPP_VERIFY_TOKEN` (e.g. a random 32-character string).
+
+#### 5. Webhook Configuration
+1. In Meta Developer App under **WhatsApp** > **Configuration**, locate the **Webhook** section.
+2. Click **Edit**:
+   - **Callback URL**: `https://<your-render-domain>/api/whatsapp/webhook`
+   - **Verify Token**: Must match `WHATSAPP_VERIFY_TOKEN`.
+3. Click **Verify and Save**.
+4. In Webhook fields, click **Manage** and subscribe to:
+   - `messages` (delivers delivery receipts, status updates, and errors).
+
+#### 6. Message Template Setup in WhatsApp Manager
+In the [WhatsApp Manager](https://business.facebook.com/wa/manage/home/):
+1. Create Template 1 — **Fee Due in 2 Days**:
+   - Name: `reborn_fee_due_reminder`
+   - Category: `UTILITY`
+   - Language: `en` (or `en_US`)
+   - Body format:
+     `Hi {{1}}, this is a friendly reminder from REBORN FITNESS. Your gym membership ({{2}}) fee of ₹{{3}} is due on {{4}}. Thank you!`
+2. Create Template 2 — **Fee Overdue**:
+   - Name: `reborn_fee_overdue_reminder`
+   - Category: `UTILITY`
+   - Language: `en` (or `en_US`)
+   - Body format:
+     `Hi {{1}}, your REBORN FITNESS membership fee of ₹{{2}} ({{3}}) is overdue by {{4}} days. Kindly complete your payment at the gym counter.`
+3. Submit templates for Meta approval (usually approved within minutes).
+
+#### 7. Render Environment Variables
+Add these environment variables to your backend service in Render:
+
+```env
+WHATSAPP_ENABLED=true
+WHATSAPP_API_VERSION=v21.0
+WHATSAPP_PHONE_NUMBER_ID=your_meta_phone_number_id
+WHATSAPP_WABA_ID=your_whatsapp_business_account_id
+WHATSAPP_ACCESS_TOKEN=your_permanent_system_user_token
+WHATSAPP_VERIFY_TOKEN=your_custom_webhook_verify_token
+WHATSAPP_APP_SECRET=your_meta_app_secret
+WHATSAPP_WEBHOOK_PATH=/api/whatsapp/webhook
+```
+
+When deployed with these variables, the WhatsApp integration will automatically switch from mock mode to live Meta API delivery.
+

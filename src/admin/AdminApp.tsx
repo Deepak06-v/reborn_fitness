@@ -8,6 +8,7 @@ import { AdminDashboard } from './pages/AdminDashboard'
 import { MembersPage } from './pages/MembersPage'
 import { MemberDetailsPage } from './pages/MemberDetailsPage'
 import { PaymentsPage } from './pages/PaymentsPage'
+import { WhatsAppNotificationsPage } from './pages/WhatsAppNotificationsPage'
 
 export function AdminApp() {
   return (
@@ -27,6 +28,7 @@ export function AdminApp() {
             <Route path="members" element={<MembersPage />} />
             <Route path="members/:id" element={<MemberDetailsPage />} />
             <Route path="payments" element={<PaymentsPage />} />
+            <Route path="whatsapp" element={<WhatsAppNotificationsPage />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Route>
         </Routes>

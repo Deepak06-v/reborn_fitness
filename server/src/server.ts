@@ -3,6 +3,7 @@ import { bootstrapAdmin } from './bootstrap/admin'
 import { connectDatabase } from './config/db'
 import { env } from './config/env'
 import { reconcileAllBilling, startBillingScheduler } from './services/billing'
+import { startWhatsAppScheduler } from './services/whatsappScheduler'
 
 async function start() {
   await connectDatabase()
@@ -15,6 +16,7 @@ async function start() {
     console.error('[billing] initial reconciliation failed:', error)
   })
   startBillingScheduler()
+  startWhatsAppScheduler()
   const app = createApp()
   app.listen(env.PORT, () => {
     // eslint-disable-next-line no-console
