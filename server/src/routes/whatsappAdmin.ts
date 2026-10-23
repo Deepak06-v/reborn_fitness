@@ -13,11 +13,20 @@ import { ApiError } from '../utils/errors'
 
 const router = Router()
 
+// In-memory cache for connection status to prevent spamming Meta Graph API on page loads
+let cachedConnectionStatus: {
+  state: 'disabled' | 'not_configured' | 'unreachable' | 'disconnected' | 'connected' | 'unavailable'
+  rawState?: string
+  checkedAt: number
+} | null = null
+
+const CONNECTION_STATUS_CACHE_TTL_MS = 60_000 // 1 minute
+
 /**
  * GET /api/admin/whatsapp/status
  * Returns selected WhatsApp provider configuration state and live instance connection status without exposing secrets.
  */
-router.get('/status', async (_req: Request, res: Response) => {
+router.get('/status', async (req: Request, res: Response) => {
   let connectionState:
     | 'disabled'
     | 'not_configured'
@@ -27,10 +36,20 @@ router.get('/status', async (_req: Request, res: Response) => {
     | 'unavailable' = 'disabled'
   let rawState: string | undefined
 
+  const forceFresh = req.query.fresh === 'true'
+  const now = Date.now()
+
   if (!env.WHATSAPP_ENABLED) {
     connectionState = 'disabled'
   } else if (!env.isWhatsAppConfigured) {
     connectionState = 'not_configured'
+  } else if (
+    !forceFresh &&
+    cachedConnectionStatus &&
+    now - cachedConnectionStatus.checkedAt < CONNECTION_STATUS_CACHE_TTL_MS
+  ) {
+    connectionState = cachedConnectionStatus.state
+    rawState = cachedConnectionStatus.rawState
   } else {
     try {
       const provider = whatsAppService.getProvider()
@@ -47,28 +66,30 @@ router.get('/status', async (_req: Request, res: Response) => {
     } catch {
       connectionState = 'unreachable'
     }
+
+    cachedConnectionStatus = {
+      state: connectionState,
+      rawState,
+      checkedAt: now,
+    }
   }
 
   const activeProvider = whatsAppService.getProviderName()
-  const instanceOrSession =
-    activeProvider === 'waporta'
-      ? env.WAPORTA_SESSION_ID
-      : activeProvider === 'evolution'
-        ? env.EVOLUTION_INSTANCE_NAME
-        : null
-
-  const webhookPath =
-    activeProvider === 'waporta'
-      ? env.WAPORTA_WEBHOOK_PATH
-      : env.EVOLUTION_WEBHOOK_PATH
+  const maskedPhoneId = env.WHATSAPP_PHONE_NUMBER_ID
+    ? `${env.WHATSAPP_PHONE_NUMBER_ID.slice(0, 3)}...${env.WHATSAPP_PHONE_NUMBER_ID.slice(-4)}`
+    : null
+  const maskedWabaId = env.WHATSAPP_BUSINESS_ACCOUNT_ID
+    ? `${env.WHATSAPP_BUSINESS_ACCOUNT_ID.slice(0, 3)}...${env.WHATSAPP_BUSINESS_ACCOUNT_ID.slice(-4)}`
+    : null
 
   res.json({
     provider: activeProvider,
     isConfigured: env.isWhatsAppConfigured,
     isEnabled: env.isWhatsAppEnabled,
-    instanceName: instanceOrSession,
-    sessionId: env.WAPORTA_SESSION_ID,
-    webhookPath,
+    graphApiVersion: env.WHATSAPP_GRAPH_API_VERSION,
+    phoneNumberId: maskedPhoneId,
+    businessAccountId: maskedWabaId,
+    webhookPath: env.WHATSAPP_WEBHOOK_PATH,
     connectionState,
     rawState,
   })
@@ -142,11 +163,23 @@ router.get('/overdue', async (_req: Request, res: Response, next) => {
 
 /**
  * GET /api/admin/whatsapp/campaigns
- * History of custom broadcast campaigns with full progress accounting.
+ * History of custom broadcast campaigns with full progress accounting and pagination.
  */
-router.get('/campaigns', async (_req: Request, res: Response, next) => {
+router.get('/campaigns', async (req: Request, res: Response, next) => {
   try {
-    const campaigns = await WhatsAppCampaign.find().sort({ createdAt: -1 }).limit(50)
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1)
+    const limit = Math.min(Math.max(1, parseInt(String(req.query.limit || '10'), 10) || 10), 50)
+    const skip = (page - 1) * limit
+
+    const [campaigns, total] = await Promise.all([
+      WhatsAppCampaign.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      WhatsAppCampaign.countDocuments(),
+    ])
+
     res.json({
       items: campaigns.map((c) => {
         const sent = c.stats.sent || 0
@@ -179,6 +212,10 @@ router.get('/campaigns', async (_req: Request, res: Response, next) => {
           completedAt: c.completedAt?.toISOString() ?? null,
         }
       }),
+      page,
+      limit,
+      total,
+      hasMore: skip + campaigns.length < total,
     })
   } catch (err) {
     next(err)
@@ -187,15 +224,32 @@ router.get('/campaigns', async (_req: Request, res: Response, next) => {
 
 /**
  * GET /api/admin/whatsapp/history
- * Complete message dispatch logs with attempt count and pause telemetry.
+ * Complete message dispatch logs with attempt count, pause telemetry, and server-side pagination.
  */
 router.get('/history', async (req: Request, res: Response, next) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 50, 100)
-    const logs = await WhatsAppNotification.find()
-      .populate('member', 'fullName memberId phone')
-      .sort({ createdAt: -1 })
-      .limit(limit)
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1)
+    const limit = Math.min(Math.max(1, parseInt(String(req.query.limit || '25'), 10) || 25), 100)
+    const skip = (page - 1) * limit
+
+    const filter: Record<string, unknown> = {}
+    if (req.query.status && typeof req.query.status === 'string') {
+      filter.status = req.query.status
+    }
+    if (req.query.type && typeof req.query.type === 'string') {
+      filter.type = req.query.type
+    }
+
+    const [logs, total] = await Promise.all([
+      WhatsAppNotification.find(filter)
+        .select('memberId phoneNumber type provider status attempts lastAttemptAt pausedAt message mediaUrl sentAt deliveredAt readAt error createdAt member')
+        .populate('member', 'fullName memberId phone')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      WhatsAppNotification.countDocuments(filter),
+    ])
 
     res.json({
       items: logs.map((log) => ({
@@ -217,6 +271,10 @@ router.get('/history', async (req: Request, res: Response, next) => {
         error: log.error,
         createdAt: log.createdAt.toISOString(),
       })),
+      page,
+      limit,
+      total,
+      hasMore: skip + logs.length < total,
     })
   } catch (err) {
     next(err)
@@ -271,7 +329,8 @@ router.post('/campaigns/preview', async (req: Request, res: Response, next) => {
   try {
     const filter = String(req.body.recipientFilter || 'all')
     const planId = req.body.planId ? String(req.body.planId) : undefined
-    const recipients = await whatsAppService.getRecipientsForFilter(filter, planId)
+    const requireConsent = req.body.requireMarketingConsent === true
+    const recipients = await whatsAppService.getRecipientsForFilter(filter, planId, requireConsent)
 
     res.json({
       recipientCount: recipients.length,
@@ -298,6 +357,7 @@ router.post('/campaigns/send', async (req: Request, res: Response, next) => {
     const mediaUrl = req.body.mediaUrl ? String(req.body.mediaUrl).trim() : null
     const recipientFilter = String(req.body.recipientFilter || 'all')
     const planId = req.body.planId ? String(req.body.planId) : undefined
+    const requireConsent = req.body.requireMarketingConsent === true
 
     if (!message && !mediaUrl) {
       throw ApiError.badRequest('Message body or media attachment is required')
@@ -316,6 +376,7 @@ router.post('/campaigns/send', async (req: Request, res: Response, next) => {
       recipientFilter,
       planId,
       adminId,
+      requireMarketingConsent: requireConsent,
       waitForCompletion: req.query.wait === 'true' || env.isTest,
     })
 

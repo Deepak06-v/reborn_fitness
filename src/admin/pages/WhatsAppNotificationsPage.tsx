@@ -115,7 +115,16 @@ export function WhatsAppNotificationsPage() {
   const [upcoming, setUpcoming] = useState<WhatsAppUpcomingItem[]>([])
   const [overdue, setOverdue] = useState<WhatsAppOverdueItem[]>([])
   const [campaigns, setCampaigns] = useState<WhatsAppCampaignItem[]>([])
+  const [campaignPage, setCampaignPage] = useState(1)
+  const [campaignTotal, setCampaignTotal] = useState(0)
+  const [campaignHasMore, setCampaignHasMore] = useState(false)
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false)
+
   const [history, setHistory] = useState<WhatsAppHistoryItem[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Custom Campaign state
   const [campaignName, setCampaignName] = useState('')
@@ -132,30 +141,29 @@ export function WhatsAppNotificationsPage() {
   // Running reminders manually
   const [runningReminders, setRunningReminders] = useState(false)
 
-  const loadData = useCallback(async () => {
+  // Fast initial load: Fetch lightweight status, upcoming reminders, and overdue lists
+  const loadInitialData = useCallback(async (isRefresh = false) => {
     try {
-      const [
-        statusRes,
-        upcomingRes,
-        overdueRes,
-        campaignsRes,
-        historyRes,
-        plansRes,
-      ] = await Promise.all([
-        adminApi.whatsapp.getStatus(),
+      const [statusRes, upcomingRes, overdueRes, plansRes] = await Promise.allSettled([
+        adminApi.whatsapp.getStatus(isRefresh),
         adminApi.whatsapp.getUpcomingDue(),
         adminApi.whatsapp.getOverdue(),
-        adminApi.whatsapp.getCampaigns(),
-        adminApi.whatsapp.getHistory(50),
         adminApi.plans.list(),
       ])
 
-      setStatus(statusRes)
-      setUpcoming(upcomingRes.items)
-      setOverdue(overdueRes.items)
-      setCampaigns(campaignsRes.items)
-      setHistory(historyRes.items)
-      setPlans(plansRes)
+      if (statusRes.status === 'fulfilled') setStatus(statusRes.value)
+      if (upcomingRes.status === 'fulfilled') setUpcoming(upcomingRes.value.items)
+      if (overdueRes.status === 'fulfilled') setOverdue(overdueRes.value.items)
+      if (plansRes.status === 'fulfilled') setPlans(plansRes.value)
+
+      // If all failed, show error toast
+      if (
+        statusRes.status === 'rejected' &&
+        upcomingRes.status === 'rejected' &&
+        overdueRes.status === 'rejected'
+      ) {
+        showToast('Failed to connect to WhatsApp notification service', 'error')
+      }
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : 'Failed to load WhatsApp data',
@@ -168,8 +176,45 @@ export function WhatsAppNotificationsPage() {
   }, [showToast])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadInitialData()
+  }, [loadInitialData])
+
+  // On-demand fetch for Campaign and Message History tab
+  const loadHistoryData = useCallback(async (cPage = 1, hPage = 1) => {
+    setLoadingCampaigns(true)
+    setLoadingHistory(true)
+    try {
+      const [campaignsRes, historyRes] = await Promise.allSettled([
+        adminApi.whatsapp.getCampaigns({ page: cPage, limit: 10 }),
+        adminApi.whatsapp.getHistory({ page: hPage, limit: 25 }),
+      ])
+
+      if (campaignsRes.status === 'fulfilled') {
+        setCampaigns(campaignsRes.value.items)
+        setCampaignPage(campaignsRes.value.page)
+        setCampaignTotal(campaignsRes.value.total)
+        setCampaignHasMore(campaignsRes.value.hasMore)
+      }
+
+      if (historyRes.status === 'fulfilled') {
+        setHistory(historyRes.value.items)
+        setHistoryPage(historyRes.value.page)
+        setHistoryTotal(historyRes.value.total)
+        setHistoryHasMore(historyRes.value.hasMore)
+      }
+    } catch {
+      showToast('Failed to load message history', 'error')
+    } finally {
+      setLoadingCampaigns(false)
+      setLoadingHistory(false)
+    }
+  }, [showToast])
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistoryData(campaignPage, historyPage)
+    }
+  }, [activeTab, campaignPage, historyPage, loadHistoryData])
 
   // Recipient estimation for custom message
   useEffect(() => {
@@ -199,7 +244,10 @@ export function WhatsAppNotificationsPage() {
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await loadData()
+    await loadInitialData(true)
+    if (activeTab === 'history') {
+      await loadHistoryData(campaignPage, historyPage)
+    }
     showToast('WhatsApp data refreshed', 'success')
   }
 
@@ -211,7 +259,10 @@ export function WhatsAppNotificationsPage() {
         `Automated reminders executed (Upcoming: ${result.summary.upcomingProcessed}, Overdue: ${result.summary.overdueProcessed})`,
         'success',
       )
-      await loadData()
+      await loadInitialData(true)
+      if (activeTab === 'history') {
+        await loadHistoryData(1, 1)
+      }
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : 'Failed to run reminders',
@@ -300,7 +351,7 @@ export function WhatsAppNotificationsPage() {
 
       // Switch to history tab and refresh
       setActiveTab('history')
-      await loadData()
+      await loadHistoryData(1, 1)
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : 'Failed to send campaign',
@@ -327,18 +378,16 @@ export function WhatsAppNotificationsPage() {
   ]
 
   const providerName =
-    status?.provider === 'waporta'
-      ? 'Waporta'
-      : status?.provider === 'evolution'
-        ? 'Evolution API'
-        : 'WhatsApp'
+    status?.provider === 'cloud_api'
+      ? 'Meta Cloud API'
+      : 'WhatsApp'
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Automation & Messaging"
         title="WhatsApp Notifications"
-        description="Automated fee reminders, daily overdue tracking, and member broadcasts via Waporta WhatsApp API."
+        description="Automated fee reminders, daily overdue tracking, and member broadcasts via Meta's official WhatsApp Business Cloud API."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -376,7 +425,7 @@ export function WhatsAppNotificationsPage() {
             <p className="mt-1 font-body text-amber-200/80">
               Live WhatsApp credentials are not configured in the environment.
               All notification workflows, deduplication, and queues run safely in simulation mode.
-              To enable live WhatsApp delivery, set <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ENABLED=true</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_PROVIDER=waporta</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WAPORTA_API_URL</code>, and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WAPORTA_API_KEY</code> in your backend environment.
+              To enable live WhatsApp delivery, set <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ENABLED=true</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_PROVIDER=cloud_api</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ACCESS_TOKEN</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_PHONE_NUMBER_ID</code>, and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_APP_SECRET</code> in your backend environment.
             </p>
           </div>
         </div>
@@ -385,10 +434,10 @@ export function WhatsAppNotificationsPage() {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div className="text-xs">
             <p className="font-semibold uppercase tracking-wider text-amber-300">
-              {providerName} Configured / Session Disconnected
+              {providerName} Configured / Phone Disconnected
             </p>
             <p className="mt-1 font-body text-amber-200/80">
-              {providerName} credentials are valid, but the session ({status.instanceName || status.sessionId || 'reborn-fitness'}) is not connected to a WhatsApp Web session. Complete QR code pairing on the gateway.
+              Meta Cloud API credentials are set, but the phone number ID ({status.phoneNumberId || 'unverified'}) is not active in your Meta Business account. Verify the number status in Meta WhatsApp Manager.
             </p>
           </div>
         </div>
@@ -397,10 +446,10 @@ export function WhatsAppNotificationsPage() {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
           <div className="text-xs">
             <p className="font-semibold uppercase tracking-wider text-red-300">
-              {providerName} Unreachable
+              {providerName} Authentication Failed / Unreachable
             </p>
             <p className="mt-1 font-body text-red-200/80">
-              The backend could not reach the configured {providerName} server. Ensure the service is running and accessible.
+              The backend could not reach or authenticate with Meta Graph API. Ensure your system user access token and phone number ID are valid.
             </p>
           </div>
         </div>
@@ -439,12 +488,12 @@ export function WhatsAppNotificationsPage() {
                 : status?.connectionState === 'unreachable'
                   ? 'Unreachable'
                   : status?.isConfigured
-                    ? (status?.provider === 'waporta' ? 'Waporta' : 'Evolution')
+                    ? 'Meta Cloud API'
                     : 'Safe Mock'
           }
           hint={
             status?.connectionState === 'connected'
-              ? `Session: ${status.instanceName || status.sessionId || 'reborn-fitness'}`
+              ? `Phone: ${status.phoneNumberId || 'Configured'} • API: ${status.graphApiVersion || 'v21.0'}`
               : status?.isConfigured
                 ? `${providerName} credentials set`
                 : 'Credentials pending'
@@ -803,13 +852,16 @@ export function WhatsAppNotificationsPage() {
         <div className="space-y-6">
           {/* Custom Broadcast Campaigns */}
           <Panel className="p-0">
-            <div className="border-b border-hairline px-6 py-4">
-              <h2 className="font-display text-base font-bold uppercase tracking-tight text-white">
-                Broadcast Campaigns
-              </h2>
-              <p className="mt-1 font-body text-xs text-muted">
-                Recent broadcast announcements with real-time delivery tracking.
-              </p>
+            <div className="flex flex-col gap-2 border-b border-hairline px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-base font-bold uppercase tracking-tight text-white">
+                  Broadcast Campaigns
+                </h2>
+                <p className="mt-1 font-body text-xs text-muted">
+                  Recent broadcast announcements with real-time delivery tracking.
+                </p>
+              </div>
+              {loadingCampaigns && <Spinner className="h-4 w-4" />}
             </div>
 
             {campaigns.length === 0 ? (
@@ -819,109 +871,140 @@ export function WhatsAppNotificationsPage() {
                 icon={<History className="h-8 w-8 text-dim" />}
               />
             ) : (
-              <div className="divide-y divide-hairline">
-                {campaigns.map((c) => (
-                  <div key={c.id} className="p-6">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-display text-sm font-bold uppercase tracking-wide text-white">
-                            {c.name}
-                          </h3>
-                          <span
-                            className={cn(
-                              'inline-flex items-center rounded px-2 py-0.5 font-mono text-[0.625rem] font-semibold uppercase',
-                              c.status === 'completed'
-                                ? 'bg-lime/20 text-lime border border-lime/40'
-                                : c.status === 'processing'
-                                  ? 'bg-accent/20 text-accent border border-accent/40 animate-pulse'
-                                  : c.status === 'paused'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                    : 'bg-red-500/20 text-red-400 border border-red-500/40',
-                            )}
-                          >
-                            {c.status}
-                          </span>
+              <div>
+                <div className="divide-y divide-hairline">
+                  {campaigns.map((c) => (
+                    <div key={c.id} className="p-6">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-display text-sm font-bold uppercase tracking-wide text-white">
+                              {c.name}
+                            </h3>
+                            <span
+                              className={cn(
+                                'inline-flex items-center rounded px-2 py-0.5 font-mono text-[0.625rem] font-semibold uppercase',
+                                c.status === 'completed'
+                                  ? 'bg-lime/20 text-lime border border-lime/40'
+                                  : c.status === 'processing'
+                                    ? 'bg-accent/20 text-accent border border-accent/40 animate-pulse'
+                                    : c.status === 'paused'
+                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                      : 'bg-red-500/20 text-red-400 border border-red-500/40',
+                              )}
+                            >
+                              {c.status}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-mono text-[0.625rem] text-dim">
+                            Dispatched: {formatDate(c.createdAt)} • Target: {c.recipientFilter}
+                          </p>
                         </div>
-                        <p className="mt-1 font-mono text-[0.625rem] text-dim">
-                          Dispatched: {formatDate(c.createdAt)} • Target: {c.recipientFilter}
-                        </p>
+                        <span className="inline-flex items-center rounded-full border border-hairline bg-white/5 px-3 py-1 font-mono text-[0.625rem] uppercase text-muted">
+                          {c.recipientCount} Total Recipients
+                        </span>
                       </div>
-                      <span className="inline-flex items-center rounded-full border border-hairline bg-white/5 px-3 py-1 font-mono text-[0.625rem] uppercase text-muted">
-                        {c.recipientCount} Total Recipients
-                      </span>
-                    </div>
 
-                    <p className="mt-3 rounded bg-canvas p-3 font-body text-xs text-muted">
-                      {c.message}
-                    </p>
-
-                    {c.error && (
-                      <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 font-mono text-[0.6875rem] text-amber-200">
-                        {c.error}
+                      <p className="mt-3 rounded bg-canvas p-3 font-body text-xs text-muted">
+                        {c.message}
                       </p>
-                    )}
 
-                    {/* Full Campaign Progress Accounting */}
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Processed</span>
-                        <p className="font-display text-sm font-bold text-white">
-                          {c.stats.processed ?? ((c.stats.sent || 0) + (c.stats.failed || 0))}
+                      {c.error && (
+                        <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 font-mono text-[0.6875rem] text-amber-200">
+                          {c.error}
                         </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Sent</span>
-                        <p className="font-display text-sm font-bold text-accent">
-                          {c.stats.sent}
-                        </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Delivered</span>
-                        <p className="font-display text-sm font-bold text-lime">
-                          {c.stats.delivered}
-                        </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Read</span>
-                        <p className="font-display text-sm font-bold text-cyan-300">
-                          {c.stats.read}
-                        </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Failed</span>
-                        <p className="font-display text-sm font-bold text-red-400">
-                          {c.stats.failed}
-                        </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Paused</span>
-                        <p className="font-display text-sm font-bold text-amber-300">
-                          {c.stats.paused ?? 0}
-                        </p>
-                      </div>
-                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
-                        <span className="font-mono text-[0.625rem] text-dim">Remaining</span>
-                        <p className="font-display text-sm font-bold text-dim">
-                          {c.stats.remaining ?? Math.max(0, c.recipientCount - ((c.stats.sent || 0) + (c.stats.failed || 0)))}
-                        </p>
+                      )}
+
+                      {/* Full Campaign Progress Accounting */}
+                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Processed</span>
+                          <p className="font-display text-sm font-bold text-white">
+                            {c.stats.processed ?? ((c.stats.sent || 0) + (c.stats.failed || 0))}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Sent</span>
+                          <p className="font-display text-sm font-bold text-accent">
+                            {c.stats.sent}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Delivered</span>
+                          <p className="font-display text-sm font-bold text-lime">
+                            {c.stats.delivered}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Read</span>
+                          <p className="font-display text-sm font-bold text-cyan-300">
+                            {c.stats.read}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Failed</span>
+                          <p className="font-display text-sm font-bold text-red-400">
+                            {c.stats.failed}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Paused</span>
+                          <p className="font-display text-sm font-bold text-amber-300">
+                            {c.stats.paused ?? 0}
+                          </p>
+                        </div>
+                        <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                          <span className="font-mono text-[0.625rem] text-dim">Remaining</span>
+                          <p className="font-display text-sm font-bold text-dim">
+                            {c.stats.remaining ?? Math.max(0, c.recipientCount - ((c.stats.sent || 0) + (c.stats.failed || 0)))}
+                          </p>
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+
+                {/* Campaigns Pagination Controls */}
+                <div className="flex items-center justify-between border-t border-hairline px-6 py-3 font-mono text-xs text-muted">
+                  <span>
+                    Showing {campaigns.length} of {campaignTotal} campaigns
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={campaignPage <= 1 || loadingCampaigns}
+                      onClick={() => setCampaignPage((p) => Math.max(1, p - 1))}
+                      className="rounded border border-hairline px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <span>Page {campaignPage}</span>
+                    <button
+                      type="button"
+                      disabled={!campaignHasMore || loadingCampaigns}
+                      onClick={() => setCampaignPage((p) => p + 1)}
+                      className="rounded border border-hairline px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40"
+                    >
+                      Next
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </Panel>
 
           {/* Individual Notification Logs */}
           <Panel className="p-0">
-            <div className="border-b border-hairline px-6 py-4">
-              <h2 className="font-display text-base font-bold uppercase tracking-tight text-white">
-                Individual Message Dispatch Logs (Latest 50)
-              </h2>
-              <p className="mt-1 font-body text-xs text-muted">
-                Audit log of all individual WhatsApp messages sent by the automated scheduler and broadcast engine.
-              </p>
+            <div className="flex flex-col gap-2 border-b border-hairline px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-base font-bold uppercase tracking-tight text-white">
+                  Individual Message Dispatch Logs
+                </h2>
+                <p className="mt-1 font-body text-xs text-muted">
+                  Audit log of all individual WhatsApp messages sent by the automated scheduler and broadcast engine.
+                </p>
+              </div>
+              {loadingHistory && <Spinner className="h-4 w-4" />}
             </div>
 
             {history.length === 0 ? (
@@ -931,59 +1014,87 @@ export function WhatsAppNotificationsPage() {
                 icon={<Clock className="h-8 w-8 text-dim" />}
               />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left font-body text-xs">
-                  <thead className="border-b border-hairline bg-surface/50 font-display uppercase tracking-[0.12em] text-dim">
-                    <tr>
-                      <th className="px-6 py-3">Member</th>
-                      <th className="px-6 py-3">Phone</th>
-                      <th className="px-6 py-3">Type</th>
-                      <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Date</th>
-                      <th className="px-6 py-3">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-hairline">
-                    {history.map((log) => (
-                      <tr key={log.id} className="hover:bg-white/[0.02]">
-                        <td className="px-6 py-3">
-                          <p className="font-semibold text-white">{log.memberName}</p>
-                          <p className="font-mono text-[0.625rem] text-dim">{log.memberId}</p>
-                        </td>
-                        <td className="px-6 py-3 font-mono text-muted">{log.phoneNumber}</td>
-                        <td className="px-6 py-3 font-mono text-[0.625rem] uppercase text-dim">
-                          <div>{log.type}</div>
-                          {log.provider && (
-                            <div className="text-[0.5625rem] text-muted/60 lowercase">
-                              via {log.provider}
-                            </div>
-                          )}
-                          {log.attempts !== undefined && log.attempts > 0 && (
-                            <div className="text-[0.5625rem] text-dim">
-                              attempts: {log.attempts}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-3">
-                          <WhatsAppDeliveryBadge
-                            status={log.status}
-                            error={log.error}
-                          />
-                        </td>
-                        <td className="px-6 py-3 font-mono text-dim">
-                          {formatDate(log.createdAt)}
-                        </td>
-                        <td className="px-6 py-3 font-body text-muted max-w-xs truncate">
-                          {log.error ? (
-                            <span className="text-red-400">{log.error}</span>
-                          ) : (
-                            log.message || '—'
-                          )}
-                        </td>
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-body text-xs">
+                    <thead className="border-b border-hairline bg-surface/50 font-display uppercase tracking-[0.12em] text-dim">
+                      <tr>
+                        <th className="px-6 py-3">Member</th>
+                        <th className="px-6 py-3">Phone</th>
+                        <th className="px-6 py-3">Type</th>
+                        <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3">Date</th>
+                        <th className="px-6 py-3">Details</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {history.map((log) => (
+                        <tr key={log.id} className="hover:bg-white/[0.02]">
+                          <td className="px-6 py-3">
+                            <p className="font-semibold text-white">{log.memberName}</p>
+                            <p className="font-mono text-[0.625rem] text-dim">{log.memberId}</p>
+                          </td>
+                          <td className="px-6 py-3 font-mono text-muted">{log.phoneNumber}</td>
+                          <td className="px-6 py-3 font-mono text-[0.625rem] uppercase text-dim">
+                            <div>{log.type}</div>
+                            {log.provider && (
+                              <div className="text-[0.5625rem] text-muted/60 lowercase">
+                                via {log.provider}
+                              </div>
+                            )}
+                            {log.attempts !== undefined && log.attempts > 0 && (
+                              <div className="text-[0.5625rem] text-dim">
+                                attempts: {log.attempts}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-3">
+                            <WhatsAppDeliveryBadge
+                              status={log.status}
+                              error={log.error}
+                            />
+                          </td>
+                          <td className="px-6 py-3 font-mono text-dim">
+                            {formatDate(log.createdAt)}
+                          </td>
+                          <td className="px-6 py-3 font-body text-muted max-w-xs truncate">
+                            {log.error ? (
+                              <span className="text-red-400">{log.error}</span>
+                            ) : (
+                              log.message || '—'
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* History Pagination Controls */}
+                <div className="flex items-center justify-between border-t border-hairline px-6 py-3 font-mono text-xs text-muted">
+                  <span>
+                    Showing {history.length} of {historyTotal} messages
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={historyPage <= 1 || loadingHistory}
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                      className="rounded border border-hairline px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <span>Page {historyPage}</span>
+                    <button
+                      type="button"
+                      disabled={!historyHasMore || loadingHistory}
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                      className="rounded border border-hairline px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </Panel>
@@ -1062,11 +1173,11 @@ export function WhatsAppNotificationsPage() {
         <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
           <span>REBORN FITNESS Controlled WhatsApp Notification System</span>
           <span className="font-mono text-[0.625rem] text-dim">
-            WhatsApp messaging powered by <span className="text-muted">{status?.provider === 'evolution' ? 'Evolution API' : 'Waporta'}</span>
+            WhatsApp messaging powered by <span className="text-muted">{status?.provider === 'cloud_api' ? 'Meta WhatsApp Cloud API' : 'Safe Mock Provider'}</span>
           </span>
         </div>
         <p className="font-mono text-[0.625rem] text-dim">
-          Notice: Shared rate limits and rolling-window pacing reduce operational risk but do not guarantee immunity from WhatsApp account restrictions. Messages must only be sent to opted-in members with active gym relations.
+          Notice: Business-initiated notifications outside customer service windows must use approved Meta templates. Messages must comply with Meta WhatsApp Business messaging policies.
         </p>
       </div>
     </div>

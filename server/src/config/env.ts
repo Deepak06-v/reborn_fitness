@@ -22,19 +22,34 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().positive().default(8),
   // How often the in-process billing job reconciles recurring billing periods.
   BILLING_RECONCILE_INTERVAL_MINUTES: z.coerce.number().positive().default(360),
-  // WhatsApp Provider Configuration (mock by default; supports 'mock', 'evolution', 'waporta')
-  WHATSAPP_PROVIDER: z.enum(['mock', 'evolution', 'waporta']).default('mock'),
+  // WhatsApp Provider Configuration (mock by default; supports 'mock', 'cloud_api')
+  WHATSAPP_PROVIDER: z.enum(['mock', 'cloud_api']).default('mock'),
   WHATSAPP_ENABLED: z
     .string()
     .optional()
     .transform((value) => value === 'true'),
-  // Waporta WhatsApp Configuration
-  WAPORTA_API_URL: z.string().optional().transform(blankToUndefined),
-  WAPORTA_API_KEY: z.string().optional().transform(blankToUndefined),
-  WAPORTA_SESSION_ID: z.string().default('reborn-fitness'),
-  WAPORTA_WEBHOOK_PATH: z
+  // Meta WhatsApp Cloud API Configuration
+  WHATSAPP_GRAPH_API_VERSION: z
     .string()
-    .default('/api/whatsapp/waporta-webhook/replace-with-a-long-random-token'),
+    .default('v21.0')
+    .refine((v) => /^v\d+(\.\d+)?$/.test(v), {
+      message: 'WHATSAPP_GRAPH_API_VERSION must be a valid Meta Graph API version, e.g. v21.0',
+    }),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional().transform(blankToUndefined),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional().transform(blankToUndefined),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional().transform(blankToUndefined),
+  WHATSAPP_APP_SECRET: z.string().optional().transform(blankToUndefined),
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().optional().transform(blankToUndefined),
+  WHATSAPP_WEBHOOK_PATH: z.string().default('/api/whatsapp/webhook'),
+  // Meta Approved Template Names and Language Codes
+  WHATSAPP_TEMPLATE_FEE_DUE: z.string().default('reborn_fee_due_reminder'),
+  WHATSAPP_TEMPLATE_FEE_DUE_LANG: z.string().default('en_US'),
+  WHATSAPP_TEMPLATE_FEE_OVERDUE: z.string().default('reborn_fee_overdue_reminder'),
+  WHATSAPP_TEMPLATE_FEE_OVERDUE_LANG: z.string().default('en_US'),
+  WHATSAPP_TEMPLATE_GYM_CLOSURE: z.string().default('reborn_gym_closure'),
+  WHATSAPP_TEMPLATE_GYM_CLOSURE_LANG: z.string().default('en_US'),
+  WHATSAPP_TEMPLATE_FESTIVE_OFFER: z.string().default('reborn_festive_offer'),
+  WHATSAPP_TEMPLATE_FESTIVE_OFFER_LANG: z.string().default('en_US'),
   // Campaign and Outbound Queue Configuration
   WHATSAPP_CAMPAIGN_DELAY_MS: z.coerce.number().positive().default(4000),
   // Batch size for sequential outbound message queue processing
@@ -43,17 +58,11 @@ const envSchema = z.object({
   WHATSAPP_QUEUE_BATCH_COOLDOWN_MS: z.coerce.number().nonnegative().default(5000),
   // Conservative per-message pacing in milliseconds
   WHATSAPP_MESSAGE_DELAY_MS: z.coerce.number().nonnegative().default(1500),
-  // Rolling-window rate limiter settings (safely below Waporta's 20 msgs / 60s limit)
+  // Rolling-window rate limiter settings (safe conservative limit, e.g. 15 msgs / 60s)
   WHATSAPP_RATE_LIMIT_MAX_PER_WINDOW: z.coerce.number().positive().default(15),
   WHATSAPP_RATE_LIMIT_WINDOW_MS: z.coerce.number().positive().default(60000),
   // Bounded retry policy for transient network failures
   WHATSAPP_MAX_RETRIES: z.coerce.number().nonnegative().default(3),
-  // Evolution API WhatsApp Configuration (retained for rollback option)
-  EVOLUTION_API_URL: z.string().optional().transform(blankToUndefined),
-  EVOLUTION_API_KEY: z.string().optional().transform(blankToUndefined),
-  EVOLUTION_INSTANCE_NAME: z.string().default('reborn-fitness'),
-  EVOLUTION_WEBHOOK_SECRET: z.string().optional().transform(blankToUndefined),
-  EVOLUTION_WEBHOOK_PATH: z.string().default('/api/whatsapp/evolution-webhook'),
   // Optional at parse time; the production requirement is enforced below.
   // Blank values (`ADMIN_USERNAME=`) are treated as "not configured".
   ADMIN_USERNAME: z
@@ -108,16 +117,12 @@ export const env = {
   billingReconcileIntervalMinutes: data.BILLING_RECONCILE_INTERVAL_MINUTES,
   whatsappProvider: data.WHATSAPP_PROVIDER,
   isWhatsAppConfigured:
-    data.WHATSAPP_PROVIDER === 'waporta'
-      ? Boolean(data.WAPORTA_API_URL && data.WAPORTA_API_KEY)
-      : data.WHATSAPP_PROVIDER === 'evolution'
-        ? Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY)
-        : false,
+    data.WHATSAPP_PROVIDER === 'cloud_api'
+      ? Boolean(data.WHATSAPP_ACCESS_TOKEN && data.WHATSAPP_PHONE_NUMBER_ID)
+      : false,
   isWhatsAppEnabled:
     (data.WHATSAPP_ENABLED ?? false) &&
-    (data.WHATSAPP_PROVIDER === 'waporta'
-      ? Boolean(data.WAPORTA_API_URL && data.WAPORTA_API_KEY)
-      : data.WHATSAPP_PROVIDER === 'evolution'
-        ? Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY)
-        : false),
+    (data.WHATSAPP_PROVIDER === 'cloud_api'
+      ? Boolean(data.WHATSAPP_ACCESS_TOKEN && data.WHATSAPP_PHONE_NUMBER_ID)
+      : false),
 }

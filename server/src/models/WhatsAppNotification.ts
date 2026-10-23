@@ -64,7 +64,7 @@ const whatsAppNotificationSchema = new Schema<WhatsAppNotificationDoc>(
     message: { type: String, default: null, trim: true },
     mediaUrl: { type: String, default: null, trim: true },
     messageId: { type: String, default: null, trim: true, index: true, sparse: true },
-    provider: { type: String, default: 'waporta', index: true },
+    provider: { type: String, default: 'cloud_api', index: true },
     status: {
       type: String,
       enum: ['not_sent', 'queued', 'sending', 'sent', 'delivered', 'read', 'failed', 'paused'],
@@ -89,6 +89,7 @@ whatsAppNotificationSchema.index({ type: 1, createdAt: -1 })
 whatsAppNotificationSchema.index({ member: 1, type: 1, createdAt: -1 })
 whatsAppNotificationSchema.index({ status: 1, createdAt: 1 })
 whatsAppNotificationSchema.index({ campaign: 1, status: 1 })
+whatsAppNotificationSchema.index({ createdAt: -1 })
 
 export const WhatsAppNotification =
   (models.WhatsAppNotification as Model<WhatsAppNotificationDoc>) ??

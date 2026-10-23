@@ -10,7 +10,13 @@ import type {
 
 export class MockWhatsAppProvider implements WhatsAppProvider {
   readonly isConfigured: boolean = false
-  public simulatedConnectionState: 'connected' | 'disconnected' | 'unreachable' | 'unconfigured' | 'unavailable' | null = null
+  public simulatedConnectionState:
+    | 'connected'
+    | 'disconnected'
+    | 'unreachable'
+    | 'unconfigured'
+    | 'unavailable'
+    | null = null
   public sentMessages: Array<{
     type: 'template' | 'text' | 'media'
     to: string
@@ -24,16 +30,23 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async getConnectionStatus(): Promise<WhatsAppConnectionStatusResult> {
     if (this.simulatedConnectionState) {
-      return { state: this.simulatedConnectionState }
+      return {
+        state: this.simulatedConnectionState,
+        rawState: this.simulatedConnectionState.toUpperCase(),
+        details: `Simulated state: ${this.simulatedConnectionState}`,
+      }
     }
     return {
       state: this.isConfigured ? 'connected' : 'unconfigured',
-      rawState: this.isConfigured ? 'open' : 'disconnected',
+      rawState: this.isConfigured ? 'AVAILABLE' : 'DISCONNECTED',
+      details: this.isConfigured
+        ? 'Mock WhatsApp Provider active'
+        : 'Meta Cloud API not configured',
     }
   }
 
   async sendTemplateMessage(options: SendTemplateOptions): Promise<WhatsAppMessageResult> {
-    const messageId = `mock_wamid_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const messageId = `wamid.mock_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
     this.sentMessages.push({
       type: 'template',
       to: options.to,
@@ -44,11 +57,12 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       success: true,
       messageId,
       status: 'sent',
+      httpStatus: 200,
     }
   }
 
   async sendTextMessage(options: SendTextOptions): Promise<WhatsAppMessageResult> {
-    const messageId = `mock_wamid_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const messageId = `wamid.mock_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
     this.sentMessages.push({
       type: 'text',
       to: options.to,
@@ -59,11 +73,12 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       success: true,
       messageId,
       status: 'sent',
+      httpStatus: 200,
     }
   }
 
   async sendMediaMessage(options: SendMediaOptions): Promise<WhatsAppMessageResult> {
-    const messageId = `mock_wamid_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const messageId = `wamid.mock_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
     this.sentMessages.push({
       type: 'media',
       to: options.to,
@@ -74,10 +89,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       success: true,
       messageId,
       status: 'sent',
+      httpStatus: 200,
     }
   }
 
-  verifyWebhookSecret(_providedSecret?: string): boolean {
+  verifyWebhookToken(_mode?: string, _token?: string): boolean {
     return true
   }
 
