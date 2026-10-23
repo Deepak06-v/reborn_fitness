@@ -315,19 +315,20 @@ Fonts: **Space Grotesk** (display), **Inter** (body), **JetBrains Mono** (teleme
 - `prefers-reduced-motion: reduce` skips all GSAP tweens
 - Skip link, live-region telemetry labels, visible focus rings
 
-## WhatsApp Notifications (Evolution API Integration)
+## WhatsApp Notifications (Waporta Migration with Evolution Rollback)
 
-REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated directly into the operations console, powered by **Evolution API** using Baileys / WhatsApp Web session connectivity.
+REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated directly into the operations console, powered by **Waporta** using Baileys / WhatsApp Web session connectivity, with configurable multi-provider selection (`waporta`, `evolution`, `mock`).
 
-> **License Notice**: WhatsApp messaging is powered by [Evolution API](https://github.com/evolution-foundation/evolution-api).
+> **Provider Notice**: WhatsApp messaging is powered by [Waporta](https://github.com/iniadil/waporta). Evolution API remains supported as a rollback option.
 
 ### Key Features
 - **Upcoming Fee Reminders**: Identifies active members whose fee is due in exactly 2 days (IST). Runs automatically and deduplicates per member per due date cycle.
 - **Overdue Reminders**: Runs daily for unpaid members. Stops automatically once payment is marked paid. Deduplicates per member per calendar day.
 - **Custom Broadcast Messages**: Targeted broadcasts (All members, Active only, Overdue only, Plan filter) with optional photo/media attachment, recipient count preview, gentle rate pacing, and pre-send confirmation safeguard.
-- **Direct Evolution API Provider**: REST integration with Evolution API endpoints (`/message/sendText/{instance}`, `/message/sendMedia/{instance}`, `/instance/connectionState/{instance}`).
-- **Safe Mock Mode**: When disabled or unconfigured, the system runs safely in mock mode without network calls or crashes.
-- **Delivery Tracking Webhook**: Receives Evolution webhook callbacks (`MESSAGES_UPDATE`, `SEND_MESSAGE`, `CONNECTION_UPDATE`) protected by constant-time shared-secret header validation (`x-webhook-secret`).
+- **Direct Waporta REST Provider**: REST integration with Waporta endpoints (`/api/whatsapp/send/text`, `/api/whatsapp/send/image`, `/api/whatsapp/sessions/:sessionId`).
+- **Safe Mock Mode**: Safe default when disabled or credentials unset, enabling local development and testing without network calls or credential leaks.
+- **Anti-Ban Campaign Pacing & Session Error Guard**: Configurable delay pacing (`WHATSAPP_CAMPAIGN_DELAY_MS=4000`) complying with Waporta's 20 msgs / 60 sec window; cleanly halts campaigns on session errors (429 rate limit/quota, 403 session ban, 503 gateway unavailable) without repeated firing.
+- **Delivery Tracking Webhook**: Receives Waporta delivery status events (`message.status`: `pending` -> `queued`, `server` -> `sent`, `delivered` -> `delivered`, `read`/`played` -> `read`, `error` -> `failed`) mounted at a high-entropy secret path (`WAPORTA_WEBHOOK_PATH`).
 
 ---
 
@@ -336,92 +337,57 @@ REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated d
 Add the following variables to `server/.env` (or your Render dashboard):
 
 ```env
-# Enable live messaging (false by default for safe mock mode)
+# --- Provider selection: mock, evolution, or waporta ---
+WHATSAPP_PROVIDER=waporta
 WHATSAPP_ENABLED=false
 
-# Evolution API server URL and master/instance API key
-EVOLUTION_API_URL=https://evolution.yourdomain.com
-EVOLUTION_API_KEY=your-secure-evolution-api-key
-EVOLUTION_INSTANCE_NAME=reborn-fitness
+# Waporta Connection (active provider)
+WAPORTA_API_URL=https://waporta.yourdomain.com
+WAPORTA_API_KEY=your-secure-waporta-api-key
+WAPORTA_SESSION_ID=reborn-fitness
 
-# Shared secret for authenticating inbound Evolution webhook requests
-EVOLUTION_WEBHOOK_SECRET=your-shared-webhook-secret
+# Register this complete secret path as Waporta's HTTPS webhook URL path:
+# e.g., https://reborn-fitness.onrender.com/api/whatsapp/waporta-webhook/<random-secret-token>
+WAPORTA_WEBHOOK_PATH=/api/whatsapp/waporta-webhook/replace-with-a-long-random-token
+
+# Campaign pacing in milliseconds (default: 4000 ms)
+WHATSAPP_CAMPAIGN_DELAY_MS=4000
+
+# Evolution API (retained temporarily for rollback option)
+EVOLUTION_API_URL=
+EVOLUTION_API_KEY=
+EVOLUTION_INSTANCE_NAME=reborn-fitness
+EVOLUTION_WEBHOOK_SECRET=
 EVOLUTION_WEBHOOK_PATH=/api/whatsapp/evolution-webhook
 ```
 
 ---
 
-### Implementation Phases
+### Waporta Gateway Server Configuration
 
-#### Phase 1: Code Integration, Abstraction & Verification (COMPLETE)
-- [x] Implemented `EvolutionWhatsAppProvider` with `sendTextMessage`, `sendMediaMessage`, and `getConnectionStatus`.
-- [x] Implemented dynamic media handoff (local uploads converted to base64 Data URIs with path traversal guards).
-- [x] Standardized phone normalization for Indian recipient format (`91XXXXXXXXXX`), handling duplicate country codes.
-- [x] Created Evolution webhook handler (`/api/whatsapp/evolution-webhook`) with constant-time shared-secret validation.
-- [x] Status hierarchy protection (`read` > `delivered` > `sent` > `queued`) and idempotent campaign statistic counters.
-- [x] Updated Admin UI status cards, setup banners, and added Evolution API attribution badge.
-- [x] Removed obsolete Meta Cloud API provider and dependencies.
-- [x] Full automated test suite verified (103+ unit, integration, and business logic tests).
+On your standalone Waporta deployment, set the gateway's own environment variables:
 
-#### Phase 2: Infrastructure & Live Connection (Separate Phase)
-Follow these ordered steps to activate live WhatsApp messaging in production:
+```env
+PORT=3000
+API_KEY=your-secure-waporta-api-key
+WEBHOOK_STATUS_EVENTS=true
+```
 
-1. **Host & Infrastructure Setup**:
-   - Provision a VPS or cloud container (e.g. Railway, Render, Hetzner, AWS EC2, DigitalOcean).
-   - Set up **PostgreSQL** and **Redis** for Evolution API message & session storage.
-   - Configure persistent volume storage for authentication tokens/keys.
-2. **Deploy Evolution API**:
-   - Run official Docker image `atendai/evolution-api:v2.x.x` (or build from source).
-   - Configure HTTPS with a reverse proxy (e.g., Caddy, Nginx, or Traefik) and obtain a public URL (e.g., `https://evolution.rebornfitness.in`).
-3. **Generate API Key & Create Instance**:
-   - Set `AUTHENTICATION_API_KEY` in Evolution API environment.
-   - Create instance via API:
-     ```http
-     POST https://evolution.yourdomain.com/instance/create
-     apikey: <EVOLUTION_API_KEY>
-     Content-Type: application/json
+Register the webhook on the `reborn-fitness` session:
+- **Webhook URL**: `https://api.yourgymdomain.com/api/whatsapp/waporta-webhook/<your-random-secret-token>`
+- **Events**: `message.status` enabled via `WEBHOOK_STATUS_EVENTS=true`
 
-     {
-       "instanceName": "reborn-fitness",
-       "token": "<INSTANCE_TOKEN>",
-       "qrcode": true,
-       "integration": "WHATSAPP-BAILEYS"
-     }
-     ```
-4. **Connect WhatsApp Account**:
-   - Fetch QR code: `GET https://evolution.yourdomain.com/instance/connect/reborn-fitness`
-   - Open WhatsApp on the gym's official mobile device > **Linked Devices** > **Link a device** > scan the QR code.
-   - Verify connection state: `GET https://evolution.yourdomain.com/instance/connectionState/reborn-fitness` returns `{"instance":{"state":"open"}}`.
-5. **Register Webhook**:
-   - Configure webhook on Evolution instance:
-     ```http
-     POST https://evolution.yourdomain.com/webhook/set/reborn-fitness
-     apikey: <EVOLUTION_API_KEY>
-     Content-Type: application/json
+---
 
-     {
-       "webhook": {
-         "enabled": true,
-         "url": "https://reborn-fitness.onrender.com/api/whatsapp/evolution-webhook",
-         "headers": {
-           "x-webhook-secret": "<EVOLUTION_WEBHOOK_SECRET>"
-         },
-         "byEvents": false,
-         "base64": false,
-         "events": [
-           "CONNECTION_UPDATE",
-           "MESSAGES_UPSERT",
-           "MESSAGES_UPDATE",
-           "SEND_MESSAGE"
-         ]
-       }
-     }
-     ```
-6. **Activate Backend Environment**:
-   - Set `WHATSAPP_ENABLED=true`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE_NAME`, and `EVOLUTION_WEBHOOK_SECRET` in Render.
-   - Deploy backend and confirm status card shows **Connected** in the admin console.
-7. **Production Verification**:
-   - Send a test custom broadcast to gym staff.
-   - Verify real-time delivery status updates (`sent` -> `delivered` -> `read`).
-   - Enable automated fee reminder schedules.
+### Implementation & Verification Status
+
+- [x] Multi-provider architecture supporting `mock`, `evolution`, and `waporta`.
+- [x] Provider-aware startup checks and status diagnostics without leaking secrets.
+- [x] `WaportaWhatsAppProvider` REST implementation (`sendTextMessage`, `sendMediaMessage`, `getConnectionStatus`, `getMessageStatus`).
+- [x] Initial socket acknowledgment (`ack: socket`) recorded as `queued` until delivery-status webhook confirmation arrives.
+- [x] Dedicated Waporta webhook endpoint mounted on secret path (`WAPORTA_WEBHOOK_PATH`) with session verification and status hierarchy protections.
+- [x] Anti-ban campaign pacing (`WHATSAPP_CAMPAIGN_DELAY_MS`) and clean halt on 429/403/503.
+- [x] Evolution provider and webhook retained for zero-downtime rollback.
+- [x] Admin console UI updated with provider badges, status cards, and attribution.
+- [x] 119 automated tests passing across 9 test files.
 

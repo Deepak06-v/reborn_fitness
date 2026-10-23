@@ -1,12 +1,13 @@
 import { Schema, model, models, type Document, type Model, type Types } from 'mongoose'
 
-export type CampaignStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type CampaignStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'paused'
 
 export interface CampaignStats {
   sent: number
   delivered: number
   read: number
   failed: number
+  paused?: number
 }
 
 export interface WhatsAppCampaignDoc extends Document<Types.ObjectId> {
@@ -37,10 +38,11 @@ const whatsAppCampaignSchema = new Schema<WhatsAppCampaignDoc>(
       delivered: { type: Number, default: 0, min: 0 },
       read: { type: Number, default: 0, min: 0 },
       failed: { type: Number, default: 0, min: 0 },
+      paused: { type: Number, default: 0, min: 0 },
     },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed'],
+      enum: ['pending', 'processing', 'completed', 'failed', 'paused'],
       default: 'pending',
       index: true,
     },

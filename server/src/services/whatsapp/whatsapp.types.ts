@@ -1,11 +1,15 @@
 export type NormalizedEvolutionPhone = string
+export type NormalizedWaportaPhone = string
 export type NormalizedMetaPhone = string
+
+export type WhatsAppProviderType = 'mock' | 'evolution' | 'waporta'
 
 export interface WhatsAppMessageResult {
   success: boolean
   messageId?: string
   status?: 'sent' | 'queued' | 'failed'
   error?: string
+  httpStatus?: number
 }
 
 export type WhatsAppConnectionState =
@@ -84,6 +88,38 @@ export interface EvolutionWebhookPayload {
   date_time?: string
   server_url?: string
   apikey?: string
+  [key: string]: unknown
+}
+
+export interface WaportaWebhookPayload {
+  event?: string
+  sessionId?: string
+  messageId?: string
+  recipient?: string
+  status?: string
+  timestamp?: number | string
+  error?: string
+  data?: {
+    sessionId?: string
+    messageId?: string
+    recipient?: string
+    status?: string
+    timestamp?: number | string
+    error?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+export interface WaportaSessionStatusResponse {
+  sessionId?: string
+  status?: string
+  state?: string
+  session?: {
+    status?: string
+    state?: string
+    [key: string]: unknown
+  }
   [key: string]: unknown
 }
 

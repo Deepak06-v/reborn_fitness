@@ -25,17 +25,18 @@ export function isValidIndianMobile(normalized: string): boolean {
 
 /**
  * Converts any phone input (+91 98765 43210, 09876543210, 9876543210, +91 91 9876543210)
- * to Evolution API's expected recipient format: digits only with country code, no '+', e.g. "919876543210".
+ * to WhatsApp provider recipient format (Waporta / Evolution): digits only with country code, no '+', e.g. "919876543210".
  * Returns null if the phone is not a valid 10-digit number.
  */
-export function formatEvolutionPhone(input: string): string | null {
+export function formatWhatsAppPhone(input: string): string | null {
   const digits = normalizePhone(input)
   if (!isValidPhone(digits)) return null
   return `91${digits}`
 }
 
-export const formatWhatsAppPhone = formatEvolutionPhone
+export const formatWaportaPhone = formatWhatsAppPhone
+export const formatEvolutionPhone = formatWhatsAppPhone
 
-/** @deprecated Use formatEvolutionPhone or formatWhatsAppPhone */
-export const formatMetaPhone = formatEvolutionPhone
+/** @deprecated Use formatWhatsAppPhone or formatWaportaPhone */
+export const formatMetaPhone = formatWhatsAppPhone
 

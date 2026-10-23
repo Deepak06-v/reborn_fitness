@@ -10,10 +10,12 @@ export type WhatsAppNotificationType =
 export type WhatsAppDeliveryStatus =
   | 'not_sent'
   | 'queued'
+  | 'sending'
   | 'sent'
   | 'delivered'
   | 'read'
   | 'failed'
+  | 'paused'
 
 export interface WhatsAppNotificationDoc extends Document<Types.ObjectId> {
   _id: Types.ObjectId
@@ -27,9 +29,13 @@ export interface WhatsAppNotificationDoc extends Document<Types.ObjectId> {
   templateName: string | null
   message: string | null
   mediaUrl: string | null
-  messageId: string | null // External message identifier (Evolution / Baileys or Meta wamid)
+  messageId: string | null // External message identifier (Waporta, Evolution / Baileys or Meta wamid)
   provider?: string | null
   status: WhatsAppDeliveryStatus
+  attempts: number
+  maxAttempts: number
+  lastAttemptAt: Date | null
+  pausedAt: Date | null
   error: string | null
   sentAt: Date | null
   deliveredAt: Date | null
@@ -58,13 +64,17 @@ const whatsAppNotificationSchema = new Schema<WhatsAppNotificationDoc>(
     message: { type: String, default: null, trim: true },
     mediaUrl: { type: String, default: null, trim: true },
     messageId: { type: String, default: null, trim: true, index: true, sparse: true },
-    provider: { type: String, default: 'evolution', index: true },
+    provider: { type: String, default: 'waporta', index: true },
     status: {
       type: String,
-      enum: ['not_sent', 'queued', 'sent', 'delivered', 'read', 'failed'],
+      enum: ['not_sent', 'queued', 'sending', 'sent', 'delivered', 'read', 'failed', 'paused'],
       default: 'not_sent',
       index: true,
     },
+    attempts: { type: Number, default: 0, min: 0 },
+    maxAttempts: { type: Number, default: 3, min: 1 },
+    lastAttemptAt: { type: Date, default: null },
+    pausedAt: { type: Date, default: null },
     error: { type: String, default: null },
     sentAt: { type: Date, default: null },
     deliveredAt: { type: Date, default: null },
@@ -77,6 +87,8 @@ const whatsAppNotificationSchema = new Schema<WhatsAppNotificationDoc>(
 
 whatsAppNotificationSchema.index({ type: 1, createdAt: -1 })
 whatsAppNotificationSchema.index({ member: 1, type: 1, createdAt: -1 })
+whatsAppNotificationSchema.index({ status: 1, createdAt: 1 })
+whatsAppNotificationSchema.index({ campaign: 1, status: 1 })
 
 export const WhatsAppNotification =
   (models.WhatsAppNotification as Model<WhatsAppNotificationDoc>) ??

@@ -17,9 +17,15 @@ import { MonthlyPayment } from '../src/models/MonthlyPayment'
 import { WhatsAppNotification } from '../src/models/WhatsAppNotification'
 import { WhatsAppCampaign } from '../src/models/WhatsAppCampaign'
 import { whatsAppService } from '../src/services/whatsapp/whatsapp.service'
+import { env } from '../src/config/env'
+import { outboundRateLimiter } from '../src/services/whatsapp/outbound-rate-limiter'
+import { outboundQueueService } from '../src/services/whatsapp/outbound-queue.service'
 import { EvolutionWhatsAppProvider } from '../src/services/whatsapp/evolution-whatsapp.provider'
 import { MockWhatsAppProvider } from '../src/services/whatsapp/mock-whatsapp.provider'
+import { WaportaWhatsAppProvider } from '../src/services/whatsapp/waporta-whatsapp.provider'
 import {
+  formatWhatsAppPhone,
+  formatWaportaPhone,
   formatEvolutionPhone,
   formatMetaPhone,
   normalizePhone,
@@ -50,6 +56,7 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
   beforeEach(async () => {
     await clearDatabase()
     await createAdmin()
+    outboundRateLimiter.reset()
     mockProvider = new MockWhatsAppProvider(true)
     whatsAppService.setProvider(mockProvider)
     vi.restoreAllMocks()
@@ -69,13 +76,15 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
       expect(normalizePhone('00919876543210')).toBe('9876543210')
     })
 
-    it('formats phone into Evolution WhatsApp recipient format (91XXXXXXXXXX)', () => {
+    it('formats phone into WhatsApp/Waporta recipient format (91XXXXXXXXXX)', () => {
+      expect(formatWhatsAppPhone('+91 98765-43210')).toBe('919876543210')
+      expect(formatWaportaPhone('+91 98765-43210')).toBe('919876543210')
       expect(formatEvolutionPhone('+91 98765-43210')).toBe('919876543210')
-      expect(formatEvolutionPhone('09876543210')).toBe('919876543210')
-      expect(formatEvolutionPhone('9876543210')).toBe('919876543210')
-      expect(formatEvolutionPhone('+91 91 9876543210')).toBe('919876543210')
-      expect(formatEvolutionPhone('12345')).toBeNull()
-      expect(formatEvolutionPhone('abcdef')).toBeNull()
+      expect(formatWaportaPhone('09876543210')).toBe('919876543210')
+      expect(formatWaportaPhone('9876543210')).toBe('919876543210')
+      expect(formatWaportaPhone('+91 91 9876543210')).toBe('919876543210')
+      expect(formatWaportaPhone('12345')).toBeNull()
+      expect(formatWaportaPhone('abcdef')).toBeNull()
       // Backwards-compatible alias check
       expect(formatMetaPhone('9876543210')).toBe('919876543210')
     })
@@ -777,9 +786,10 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
     it('provides status, lists upcoming and overdue, and executes custom campaign', async () => {
       const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
 
-      // 1. WhatsApp status reports Evolution provider information
+      // 1. WhatsApp status reports provider information
       const statusRes = await agent.get('/api/admin/whatsapp/status').expect(200)
-      expect(statusRes.body).toHaveProperty('provider', 'evolution')
+      expect(statusRes.body).toHaveProperty('provider')
+      expect(statusRes.body.provider).toBeDefined()
       expect(statusRes.body).toHaveProperty('instanceName')
       expect(statusRes.body).toHaveProperty('connectionState')
 
@@ -929,6 +939,747 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
       overdue = await whatsAppService.getOverdueMembers(now)
       found = overdue.find((o) => o.member.memberId === 'RBF-0021')
       expect(found).toBeUndefined()
+    })
+  })
+
+  describe('Provider Selection & Safe Defaults', () => {
+    it('uses mock mode by default without live credentials', () => {
+      const mock = new MockWhatsAppProvider(false)
+      expect(mock.isConfigured).toBe(false)
+      expect(env.whatsappProvider).toBeDefined()
+    })
+
+    it('reports unconfigured connection status when credentials are missing', async () => {
+      const incomplete = new WaportaWhatsAppProvider({
+        apiUrl: '',
+        apiKey: '',
+        sessionId: 'reborn-fitness',
+      })
+      expect(incomplete.isConfigured).toBe(false)
+      const status = await incomplete.getConnectionStatus()
+      expect(status.state).toBe('unconfigured')
+    })
+  })
+
+  describe('WaportaWhatsAppProvider Unit Tests', () => {
+    it('initializes properly and reports isConfigured correctly', () => {
+      const valid = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com/',
+        apiKey: 'waporta-secret-key-123',
+        sessionId: 'reborn-fitness',
+      })
+      expect(valid.isConfigured).toBe(true)
+      expect(valid.sessionId).toBe('reborn-fitness')
+
+      const invalid = new WaportaWhatsAppProvider({
+        apiUrl: '',
+        apiKey: '',
+        sessionId: 'reborn-fitness',
+      })
+      expect(invalid.isConfigured).toBe(false)
+    })
+
+    it('sends text messages with X-API-Key header to /api/whatsapp/send/text', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'super-secret-api-key',
+        sessionId: 'reborn-fitness',
+      })
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'sent',
+            messageId: '3EB0A1B2C3D4E5F6',
+            ack: 'socket',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+
+      const result = await provider.sendTextMessage({
+        to: '+91 98765 43210',
+        text: 'Your gym membership fee is due in 2 days.',
+      })
+
+      // Prompt section 5: Initial socket acknowledgment only proves socket write,
+      // so it is recorded initially as 'queued' until stronger status arrives.
+      expect(result.success).toBe(true)
+      expect(result.messageId).toBe('3EB0A1B2C3D4E5F6')
+      expect(result.status).toBe('queued')
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]
+      expect(calledUrl).toBe('https://waporta.example.com/api/whatsapp/send/text')
+      expect((calledInit?.headers as Record<string, string>)?.['X-API-Key']).toBe('super-secret-api-key')
+      expect((calledInit?.headers as Record<string, string>)?.['Content-Type']).toBe('application/json')
+
+      const body = JSON.parse(calledInit?.body as string)
+      expect(body).toEqual({
+        sessionId: 'reborn-fitness',
+        to: '919876543210',
+        text: 'Your gym membership fee is due in 2 days.',
+      })
+    })
+
+    it('handles image sending with base64 Data URI from local upload and blocks traversal', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'test-waporta-key',
+        sessionId: 'reborn-fitness',
+      })
+
+      const uploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'whatsapp')
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+      const testFile = path.join(uploadDir, 'waporta_promo.jpg')
+      fs.writeFileSync(testFile, Buffer.from('fake-jpeg-data'))
+
+      try {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              status: 'sent',
+              messageId: 'wamid_img_999',
+              ack: 'socket',
+            }),
+            { status: 200 },
+          ),
+        )
+
+        const result = await provider.sendMediaMessage({
+          to: '9876543210',
+          type: 'image',
+          mediaUrl: '/uploads/whatsapp/waporta_promo.jpg',
+          caption: 'Special Diwali Discount',
+        })
+
+        expect(result.success).toBe(true)
+        expect(result.messageId).toBe('wamid_img_999')
+        expect(result.status).toBe('queued')
+
+        const [calledUrl, calledInit] = fetchSpy.mock.calls[0]
+        expect(calledUrl).toBe('https://waporta.example.com/api/whatsapp/send/image')
+        const body = JSON.parse(calledInit?.body as string)
+        expect(body.sessionId).toBe('reborn-fitness')
+        expect(body.to).toBe('919876543210')
+        expect(body.text).toBe('Special Diwali Discount')
+        expect(body.media).toContain('data:image/jpeg;base64,')
+
+        // Test path traversal protection
+        const traversal = await provider.sendMediaMessage({
+          to: '9876543210',
+          type: 'image',
+          mediaUrl: '/uploads/whatsapp/../../../../windows/system32/drivers/etc/hosts',
+        })
+        expect(traversal.success).toBe(false)
+        expect(traversal.error).toContain('Media attachment could not be read')
+      } finally {
+        if (fs.existsSync(testFile)) fs.unlinkSync(testFile)
+      }
+    })
+
+    it('passes remote HTTPS media URLs through directly', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'test-key',
+        sessionId: 'reborn-fitness',
+      })
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ status: 'sent', messageId: 'wamid_remote_1' }),
+          { status: 200 },
+        ),
+      )
+
+      const result = await provider.sendMediaMessage({
+        to: '919876543210',
+        type: 'image',
+        mediaUrl: 'https://cdn.example.com/gym-flyer.png',
+        caption: 'Remote flyer',
+      })
+
+      expect(result.success).toBe(true)
+      const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)
+      expect(body.media).toBe('https://cdn.example.com/gym-flyer.png')
+    })
+
+    it('handles distinct error codes: 429, 422, 403, 503 and timeouts without leaking credentials', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'super_secret_credentials_do_not_leak',
+        sessionId: 'reborn-fitness',
+      })
+
+      // 1. 429 Rate limit
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 }),
+      )
+      const res429 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
+      expect(res429.success).toBe(false)
+      expect(res429.httpStatus).toBe(429)
+      expect(res429.error).toContain('429')
+      expect(res429.error).not.toContain('super_secret_credentials_do_not_leak')
+
+      // 2. 422 Unregistered number
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Number not on WhatsApp' }), { status: 422 }),
+      )
+      const res422 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
+      expect(res422.success).toBe(false)
+      expect(res422.httpStatus).toBe(422)
+      expect(res422.error).toContain('422')
+
+      // 3. 403 Session banned / rejected
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Session revoked' }), { status: 403 }),
+      )
+      const res403 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
+      expect(res403.success).toBe(false)
+      expect(res403.httpStatus).toBe(403)
+      expect(res403.error).toContain('403')
+
+      // 4. 503 Session unavailable
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Gateway unavailable' }), { status: 503 }),
+      )
+      const res503 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
+      expect(res503.success).toBe(false)
+      expect(res503.httpStatus).toBe(503)
+      expect(res503.error).toContain('503')
+
+      // 5. Network error
+      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Gateway connection reset'))
+      const resNet = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
+      expect(resNet.success).toBe(false)
+      expect(resNet.error).toContain('Gateway connection reset')
+    })
+
+    it('maps Waporta session connectivity states accurately', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'test-key',
+        sessionId: 'reborn-fitness',
+      })
+
+      // connected
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'connected' }), { status: 200 }),
+      )
+      const s1 = await provider.getConnectionStatus()
+      expect(s1.state).toBe('connected')
+
+      // connecting -> maps to disconnected with details
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'connecting' }), { status: 200 }),
+      )
+      const s2 = await provider.getConnectionStatus()
+      expect(s2.state).toBe('disconnected')
+      expect(s2.details).toContain('connecting')
+
+      // disconnected
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'disconnected' }), { status: 200 }),
+      )
+      const s3 = await provider.getConnectionStatus()
+      expect(s3.state).toBe('disconnected')
+
+      // 404 session not found -> disconnected
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Not found' }), { status: 404 }),
+      )
+      const s4 = await provider.getConnectionStatus()
+      expect(s4.state).toBe('disconnected')
+      expect(s4.details).toContain('not found')
+
+      // 401 auth error -> unreachable
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401 }),
+      )
+      const s5 = await provider.getConnectionStatus()
+      expect(s5.state).toBe('unreachable')
+    })
+
+    it('queries message status held in Waporta memory cache', async () => {
+      const provider = new WaportaWhatsAppProvider({
+        apiUrl: 'https://waporta.example.com',
+        apiKey: 'test-key',
+        sessionId: 'reborn-fitness',
+      })
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ messageId: 'msg_100', status: 'delivered' }), { status: 200 }),
+      )
+      const diag = await provider.getMessageStatus('msg_100')
+      expect(diag).toEqual({ messageId: 'msg_100', status: 'delivered' })
+    })
+  })
+
+  describe('Waporta Webhook Endpoint & Status Mapping', () => {
+    it('provides connectivity health check at secret webhook path', async () => {
+      const res = await request(app).get(env.WAPORTA_WEBHOOK_PATH)
+      expect(res.status).toBe(200)
+      expect(res.body.service).toBe('waporta-webhook')
+    })
+
+    it('rejects mismatched session ID with HTTP 403', async () => {
+      const res = await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: 'other-session-unauthorized',
+          messageId: 'test_msg_id',
+          status: 'delivered',
+        })
+
+      expect(res.status).toBe(403)
+      expect(res.body.error).toContain('Mismatched session ID')
+    })
+
+    it('rejects malformed webhook request bodies with HTTP 400', async () => {
+      const res = await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .set('Content-Type', 'application/json')
+        .send('not-a-json-object')
+
+      expect(res.status).toBe(400)
+    })
+
+    it('safely ignores message.received events without error', async () => {
+      const res = await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.received',
+          sessionId: env.WAPORTA_SESSION_ID,
+          from: '919876543210',
+          text: 'Hello gym',
+        })
+
+      expect(res.status).toBe(200)
+      expect(res.body.processed).toBe(0)
+    })
+
+    it('maps Waporta status events (pending, server, delivered, read, error) and persists to MongoDB', async () => {
+      const member = await Member.create({
+        memberId: 'RBF-0091',
+        fullName: 'Waporta Member',
+        phone: '9876543210',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      // 1. Create notification in queued state with external messageId
+      const notif = await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876543210',
+        type: 'FEE_DUE_2_DAYS',
+        message: 'Upcoming fee reminder',
+        messageId: 'waporta_msg_888',
+        provider: 'waporta',
+        status: 'queued',
+      })
+
+      // 2. Webhook event: server acknowledgment (server -> sent)
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'waporta_msg_888',
+          status: 'server',
+          timestamp: Math.floor(Date.now() / 1000),
+        })
+
+      let updated = await WhatsAppNotification.findById(notif._id)
+      expect(updated?.status).toBe('sent')
+      expect(updated?.sentAt).toBeDefined()
+
+      // 3. Webhook event: delivered (delivered -> delivered)
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'waporta_msg_888',
+          status: 'delivered',
+          timestamp: Math.floor(Date.now() / 1000),
+        })
+
+      updated = await WhatsAppNotification.findById(notif._id)
+      expect(updated?.status).toBe('delivered')
+      expect(updated?.deliveredAt).toBeDefined()
+
+      // 4. Webhook event: read (read -> read)
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'waporta_msg_888',
+          status: 'read',
+          timestamp: Math.floor(Date.now() / 1000),
+        })
+
+      updated = await WhatsAppNotification.findById(notif._id)
+      expect(updated?.status).toBe('read')
+      expect(updated?.readAt).toBeDefined()
+    })
+
+    it('enforces status hierarchy: cannot downgrade higher statuses and protects campaign stats', async () => {
+      const member = await Member.create({
+        memberId: 'RBF-0092',
+        fullName: 'Hierarchy Test',
+        phone: '9876543211',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      const campaign = await WhatsAppCampaign.create({
+        name: 'Hierarchy Promo',
+        message: 'Hello',
+        recipientFilter: 'all',
+        recipientCount: 1,
+        stats: { sent: 1, delivered: 0, read: 0, failed: 0 },
+        status: 'processing',
+        createdBy: member._id,
+      })
+
+      const notif = await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876543211',
+        type: 'CUSTOM',
+        campaign: campaign._id,
+        message: 'Hello',
+        messageId: 'hierarchy_msg_1',
+        provider: 'waporta',
+        status: 'sent',
+      })
+
+      // Deliver message
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'hierarchy_msg_1',
+          status: 'delivered',
+        })
+
+      let cDoc = await WhatsAppCampaign.findById(campaign._id)
+      expect(cDoc?.stats.delivered).toBe(1)
+
+      // Out-of-order 'sent' event arriving late must NOT downgrade delivered back to sent
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'hierarchy_msg_1',
+          status: 'server',
+        })
+
+      let nDoc = await WhatsAppNotification.findById(notif._id)
+      expect(nDoc?.status).toBe('delivered')
+
+      // Delayed 'error' event must NOT overwrite a delivered message
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'hierarchy_msg_1',
+          status: 'error',
+          error: 'Transient error after delivery',
+        })
+
+      nDoc = await WhatsAppNotification.findById(notif._id)
+      expect(nDoc?.status).toBe('delivered')
+
+      // Duplicate 'delivered' event must NOT double-count campaign stats
+      await request(app)
+        .post(env.WAPORTA_WEBHOOK_PATH)
+        .send({
+          event: 'message.status',
+          sessionId: env.WAPORTA_SESSION_ID,
+          messageId: 'hierarchy_msg_1',
+          status: 'delivered',
+        })
+
+      cDoc = await WhatsAppCampaign.findById(campaign._id)
+      expect(cDoc?.stats.delivered).toBe(1)
+    })
+  })
+
+  describe('Campaign Rate Pacing & Session Error Guard', () => {
+    it('halts campaign immediately on 429 rate limit or 403 session ban and records failure cleanly', async () => {
+      const m1 = await Member.create({
+        memberId: 'RBF-0093',
+        fullName: 'Camp Member 1',
+        phone: '9876543201',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+      const m2 = await Member.create({
+        memberId: 'RBF-0094',
+        fullName: 'Camp Member 2',
+        phone: '9876543202',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+      const m3 = await Member.create({
+        memberId: 'RBF-0095',
+        fullName: 'Camp Member 3',
+        phone: '9876543203',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      // Custom test provider that succeeds on m1, then fails with 429 on m2
+      let callCount = 0
+      const rateLimitedProvider: any = {
+        isConfigured: true,
+        sendTextMessage: vi.fn().mockImplementation(async (opts) => {
+          callCount++
+          if (callCount === 1) {
+            return { success: true, messageId: 'camp_msg_1', status: 'queued' }
+          }
+          return {
+            success: false,
+            error: 'Rate limit or quota exceeded (HTTP 429): Too many requests',
+            status: 'failed',
+            httpStatus: 429,
+          }
+        }),
+      }
+
+      whatsAppService.setProvider(rateLimitedProvider)
+
+      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
+      const res = await agent
+        .post('/api/admin/whatsapp/campaigns/send?wait=true')
+        .set('x-csrf-token', csrf)
+        .send({
+          name: 'Pacing Guard Test',
+          message: 'Campaign pacing test',
+          recipientFilter: 'all',
+        })
+
+      expect(res.status).toBe(200)
+
+      // Verify that provider was NOT called for m3 because 429 cleanly halted the queue!
+      expect(callCount).toBe(2)
+
+      const campaign = await WhatsAppCampaign.findOne({ name: 'Pacing Guard Test' })
+      expect(campaign).toBeDefined()
+      expect(campaign?.status).toBe('paused')
+      expect(campaign?.error).toContain('429')
+
+      // Verify all notifications exist and m3 was not dispatched
+      const notifs = await WhatsAppNotification.find({ campaign: campaign?._id }).sort({ createdAt: 1 })
+      expect(notifs.length).toBe(3)
+      expect(notifs[0].status).toBe('queued')
+      expect(notifs[1].status).toBe('paused')
+      expect(notifs[2].status).toBe('queued') // Retained cleanly for resumption
+    })
+  })
+
+  describe('Controlled Outbound Messaging & Shared Queue', () => {
+    it('cancels fee reminder dispatch if member pays fee before queue processes', async () => {
+      const now = new Date('2026-10-24T10:00:00+05:30')
+      const member = await Member.create({
+        memberId: 'RBF-0096',
+        fullName: 'Paid Member Check',
+        phone: '9876543296',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      const payment = await MonthlyPayment.create({
+        member: member._id,
+        memberId: member.memberId,
+        invoiceNumber: 'INV-PAID-001',
+        billingMonth: '2026-10',
+        planId: 'monthly-1500',
+        planName: 'Monthly – ₹1,500',
+        dueDate: new Date('2026-10-26T00:00:00+05:30'), // 2 days in future
+        dueAmountPaise: 150000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      // Pause rate limiter so notification is queued in database but not yet dispatched
+      outboundRateLimiter.pause('Test holding in queue')
+
+      const queuedNotif = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
+      expect(queuedNotif).not.toBeNull()
+      expect(queuedNotif?.status).toBe('queued')
+
+      // Member now settles payment!
+      payment.amountPaidPaise = 150000
+      payment.status = 'paid'
+      await payment.save()
+
+      // Resume queue and process pending
+      outboundRateLimiter.resume()
+      await outboundQueueService.dispatchPending()
+
+      // Verify that reminder was SKIPPED and NOT sent because member paid
+      const finalNotif = await WhatsAppNotification.findById(queuedNotif?._id)
+      expect(finalNotif?.status).toBe('not_sent')
+      expect(finalNotif?.error).toContain('Payment settled prior to dispatch')
+    })
+
+    it('enforces shared rolling-window limiter across concurrent dispatches', async () => {
+      outboundRateLimiter.reset()
+      outboundRateLimiter.configure({
+        maxPerWindow: 2,
+        windowMs: 300,
+        batchSize: 5,
+        batchCooldownMs: 0,
+        messageDelayMs: 0,
+      })
+
+      const sendTimes: number[] = []
+      const trackingProvider: any = {
+        isConfigured: true,
+        sendTextMessage: vi.fn().mockImplementation(async () => {
+          sendTimes.push(Date.now())
+          return { success: true, messageId: `msg_${Date.now()}`, status: 'sent' }
+        }),
+      }
+      whatsAppService.setProvider(trackingProvider)
+
+      const m1 = await Member.create({
+        memberId: 'RBF-0097',
+        fullName: 'Rate Member 1',
+        phone: '9876543297',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+      const m2 = await Member.create({
+        memberId: 'RBF-0098',
+        fullName: 'Rate Member 2',
+        phone: '9876543298',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+      const m3 = await Member.create({
+        memberId: 'RBF-0099',
+        fullName: 'Rate Member 3',
+        phone: '9876543299',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      // Create 3 notifications
+      for (const m of [m1, m2, m3]) {
+        await WhatsAppNotification.create({
+          member: m._id,
+          memberId: m.memberId,
+          phoneNumber: '91' + m.phone,
+          type: 'CUSTOM',
+          message: 'Rate limit test',
+          provider: 'waporta',
+          status: 'queued',
+        })
+      }
+
+      await outboundQueueService.dispatchPending()
+
+      expect(trackingProvider.sendTextMessage).toHaveBeenCalledTimes(3)
+      // Check that 3rd dispatch waited for window expiration (at least 200ms)
+      expect(sendTimes.length).toBe(3)
+      const diff = sendTimes[2] - sendTimes[0]
+      expect(diff).toBeGreaterThanOrEqual(250)
+    })
+
+    it('treats ambiguous timeouts carefully and avoids auto-retrying to prevent duplicate messages', async () => {
+      outboundRateLimiter.reset()
+
+      const timeoutProvider: any = {
+        isConfigured: true,
+        sendTextMessage: vi.fn().mockImplementation(async () => {
+          const abortErr = new Error('The operation was aborted')
+          abortErr.name = 'AbortError'
+          throw abortErr
+        }),
+      }
+      whatsAppService.setProvider(timeoutProvider)
+
+      const m = await Member.create({
+        memberId: 'RBF-0100',
+        fullName: 'Timeout Member',
+        phone: '9876543100',
+        planId: 'monthly-1500',
+        monthlyFeePaise: 150000,
+        joiningDate: new Date('2026-09-01'),
+        status: 'active',
+      })
+
+      const notif = await WhatsAppNotification.create({
+        member: m._id,
+        memberId: m.memberId,
+        phoneNumber: '91' + m.phone,
+        type: 'CUSTOM',
+        message: 'Timeout test',
+        provider: 'waporta',
+        status: 'queued',
+      })
+
+      await outboundQueueService.dispatchPending()
+
+      const updated = await WhatsAppNotification.findById(notif._id)
+      expect(updated?.status).toBe('failed')
+      expect(updated?.error).toContain('Ambiguous timeout')
+      // Ensure provider was called once and not blindly retried
+      expect(timeoutProvider.sendTextMessage).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports full campaign progress and exposes queue status and pause/resume controls in admin API', async () => {
+      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
+
+      // Check queue status endpoint
+      const qStatus = await agent.get('/api/admin/whatsapp/queue/status').expect(200)
+      expect(qStatus.body).toHaveProperty('counts')
+      expect(qStatus.body).toHaveProperty('rateLimiter')
+
+      // Pause queue
+      await agent
+        .post('/api/admin/whatsapp/queue/pause')
+        .set('x-csrf-token', csrf)
+        .send({ reason: 'Maintenance pause' })
+        .expect(200)
+
+      expect(outboundRateLimiter.isPaused()).toBe(true)
+
+      // Resume queue
+      await agent
+        .post('/api/admin/whatsapp/queue/resume')
+        .set('x-csrf-token', csrf)
+        .send({})
+        .expect(200)
+
+      expect(outboundRateLimiter.isPaused()).toBe(false)
     })
   })
 })

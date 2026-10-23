@@ -11,9 +11,10 @@ import {
 import { paiseToRupees } from '../../utils/money'
 import { formatDDMMYYYY, istDay } from '../../utils/month'
 import { calendarDaysDifference } from '../../utils/paymentStatus'
-import { formatEvolutionPhone } from '../../utils/phone'
+import { formatWhatsAppPhone } from '../../utils/phone'
 import { EvolutionWhatsAppProvider } from './evolution-whatsapp.provider'
 import { MockWhatsAppProvider } from './mock-whatsapp.provider'
+import { WaportaWhatsAppProvider } from './waporta-whatsapp.provider'
 import { WhatsAppError } from './whatsapp.errors'
 import type { WhatsAppProvider } from './whatsapp.provider'
 import {
@@ -24,13 +25,18 @@ import {
 import type {
   EvolutionWebhookPayload,
   EvolutionWebhookEventData,
+  WaportaWebhookPayload,
   MetaWebhookPayload,
   MetaWebhookStatus,
 } from './whatsapp.types'
 
+import { outboundQueueService } from './outbound-queue.service'
+
 const STATUS_RANKS: Record<WhatsAppDeliveryStatus, number> = {
   not_sent: 0,
   queued: 1,
+  sending: 1,
+  paused: 1,
   sent: 2,
   delivered: 3,
   read: 4,
@@ -45,7 +51,24 @@ class WhatsAppService {
   }
 
   private createProvider(): WhatsAppProvider {
-    if (env.isWhatsAppEnabled && env.EVOLUTION_API_URL && env.EVOLUTION_API_KEY) {
+    if (
+      env.whatsappProvider === 'waporta' &&
+      env.isWhatsAppEnabled &&
+      env.WAPORTA_API_URL &&
+      env.WAPORTA_API_KEY
+    ) {
+      return new WaportaWhatsAppProvider({
+        apiUrl: env.WAPORTA_API_URL,
+        apiKey: env.WAPORTA_API_KEY,
+        sessionId: env.WAPORTA_SESSION_ID,
+      })
+    }
+    if (
+      env.whatsappProvider === 'evolution' &&
+      env.isWhatsAppEnabled &&
+      env.EVOLUTION_API_URL &&
+      env.EVOLUTION_API_KEY
+    ) {
       return new EvolutionWhatsAppProvider({
         apiUrl: env.EVOLUTION_API_URL,
         apiKey: env.EVOLUTION_API_KEY,
@@ -63,6 +86,17 @@ class WhatsAppService {
 
   getProvider(): WhatsAppProvider {
     return this.provider
+  }
+
+  getProviderName(): string {
+    if (this.provider instanceof WaportaWhatsAppProvider) return 'waporta'
+    if (this.provider instanceof EvolutionWhatsAppProvider) return 'evolution'
+    if (this.provider instanceof MockWhatsAppProvider) {
+      return env.whatsappProvider === 'waporta' || env.whatsappProvider === 'evolution'
+        ? env.whatsappProvider
+        : 'mock'
+    }
+    return env.whatsappProvider || 'mock'
   }
 
   get isConfigured(): boolean {
@@ -192,7 +226,7 @@ class WhatsAppService {
       return existing
     }
 
-    const recipientPhone = formatEvolutionPhone(member.phone)
+    const recipientPhone = formatWhatsAppPhone(member.phone)
     if (!recipientPhone) {
       const failedRecord = await WhatsAppNotification.create({
         member: member._id,
@@ -202,7 +236,7 @@ class WhatsAppService {
         dedupKey,
         payment: payment._id,
         templateName: WHATSAPP_TEMPLATES.FEE_DUE_2_DAYS,
-        provider: 'evolution',
+        provider: this.getProviderName(),
         status: 'failed',
         error: 'Invalid recipient phone number',
         failedAt: now,
@@ -232,7 +266,7 @@ class WhatsAppService {
       payment: payment._id,
       templateName: WHATSAPP_TEMPLATES.FEE_DUE_2_DAYS,
       message: messageText,
-      provider: 'evolution',
+      provider: this.getProviderName(),
       status: 'queued',
       metadata: {
         amountDue: amountStr,
@@ -249,30 +283,10 @@ class WhatsAppService {
       return notification
     }
 
-    try {
-      const sendResult = await this.provider.sendTextMessage({
-        to: recipientPhone,
-        text: messageText,
-      })
-
-      if (sendResult.success) {
-        notification.status = 'sent'
-        notification.messageId = sendResult.messageId || null
-        notification.sentAt = new Date()
-      } else {
-        notification.status = 'failed'
-        notification.error = sendResult.error || 'Failed to send fee due reminder'
-        notification.failedAt = new Date()
-      }
-      await notification.save()
-      return notification
-    } catch (err) {
-      notification.status = 'failed'
-      notification.error = err instanceof Error ? err.message : 'Unknown dispatch error'
-      notification.failedAt = new Date()
-      await notification.save()
-      return notification
-    }
+    // Process through shared persistent queue and rate limiter
+    await outboundQueueService.dispatchPending()
+    const updated = await WhatsAppNotification.findById(notification._id)
+    return updated || notification
   }
 
   /**
@@ -299,7 +313,7 @@ class WhatsAppService {
       return existing
     }
 
-    const recipientPhone = formatEvolutionPhone(member.phone)
+    const recipientPhone = formatWhatsAppPhone(member.phone)
     if (!recipientPhone) {
       const failedRecord = await WhatsAppNotification.create({
         member: member._id,
@@ -309,7 +323,7 @@ class WhatsAppService {
         dedupKey,
         payment: payment._id,
         templateName: WHATSAPP_TEMPLATES.FEE_OVERDUE,
-        provider: 'evolution',
+        provider: this.getProviderName(),
         status: 'failed',
         error: 'Invalid recipient phone number',
         failedAt: now,
@@ -337,7 +351,7 @@ class WhatsAppService {
       payment: payment._id,
       templateName: WHATSAPP_TEMPLATES.FEE_OVERDUE,
       message: messageText,
-      provider: 'evolution',
+      provider: this.getProviderName(),
       status: 'queued',
       metadata: {
         daysOverdue,
@@ -353,30 +367,10 @@ class WhatsAppService {
       return notification
     }
 
-    try {
-      const sendResult = await this.provider.sendTextMessage({
-        to: recipientPhone,
-        text: messageText,
-      })
-
-      if (sendResult.success) {
-        notification.status = 'sent'
-        notification.messageId = sendResult.messageId || null
-        notification.sentAt = new Date()
-      } else {
-        notification.status = 'failed'
-        notification.error = sendResult.error || 'Failed to send overdue reminder'
-        notification.failedAt = new Date()
-      }
-      await notification.save()
-      return notification
-    } catch (err) {
-      notification.status = 'failed'
-      notification.error = err instanceof Error ? err.message : 'Unknown dispatch error'
-      notification.failedAt = new Date()
-      await notification.save()
-      return notification
-    }
+    // Process through shared persistent queue and rate limiter
+    await outboundQueueService.dispatchPending()
+    const updated = await WhatsAppNotification.findById(notification._id)
+    return updated || notification
   }
 
   /**
@@ -413,7 +407,7 @@ class WhatsAppService {
   }
 
   /**
-   * Creates a custom broadcast campaign and processes its queue.
+   * Creates a custom broadcast campaign and enqueues messages into the shared persistent queue.
    */
   async createAndSendCampaign(params: {
     name: string
@@ -435,52 +429,14 @@ class WhatsAppService {
       mediaUrl: params.mediaUrl || null,
       recipientFilter: params.recipientFilter,
       recipientCount: recipients.length,
-      stats: { sent: 0, delivered: 0, read: 0, failed: 0 },
+      stats: { sent: 0, delivered: 0, read: 0, failed: 0, paused: 0 },
       status: 'processing',
       createdBy: new Types.ObjectId(params.adminId),
     })
 
-    const runPromise = this.processCampaignQueue(
-      campaign._id.toString(),
-      recipients,
-      params.message,
-      params.mediaUrl,
-    ).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error(`[whatsapp] Campaign ${campaign._id} error:`, err)
-    })
-
-    if (params.waitForCompletion) {
-      await runPromise
-    }
-
-    return campaign
-  }
-
-  /**
-   * Internal queue processor for a campaign with sequential rate pacing.
-   */
-  private async processCampaignQueue(
-    campaignId: string,
-    recipients: MemberDoc[],
-    message: string,
-    mediaUrl?: string | null,
-  ): Promise<void> {
-    const campaign = await WhatsAppCampaign.findById(campaignId)
-    if (!campaign) return
-
-    let sentCount = 0
-    let failedCount = 0
-
-    for (let i = 0; i < recipients.length; i++) {
-      const member = recipients[i]
-
-      // Gentle rate control between consecutive dispatches in production
-      if (i > 0 && !env.isTest) {
-        await new Promise((resolve) => setTimeout(resolve, 50))
-      }
-
-      const recipientPhone = formatEvolutionPhone(member.phone)
+    // Enqueue all recipient notifications in the shared persistent queue
+    for (const member of recipients) {
+      const recipientPhone = formatWhatsAppPhone(member.phone)
       if (!recipientPhone) {
         await WhatsAppNotification.create({
           member: member._id,
@@ -488,79 +444,44 @@ class WhatsAppService {
           phoneNumber: member.phone,
           type: 'CUSTOM',
           campaign: campaign._id,
-          message,
-          mediaUrl: mediaUrl || null,
-          provider: 'evolution',
+          message: params.message,
+          mediaUrl: params.mediaUrl || null,
+          provider: this.getProviderName(),
           status: 'failed',
           error: 'Invalid recipient phone number',
           failedAt: new Date(),
         })
-        failedCount += 1
         continue
       }
 
-      const notification = await WhatsAppNotification.create({
+      await WhatsAppNotification.create({
         member: member._id,
         memberId: member.memberId,
         phoneNumber: recipientPhone,
         type: 'CUSTOM',
         campaign: campaign._id,
-        message,
-        mediaUrl: mediaUrl || null,
-        provider: 'evolution',
+        message: params.message,
+        mediaUrl: params.mediaUrl || null,
+        provider: this.getProviderName(),
         status: 'queued',
       })
-
-      if (!this.isEnabled) {
-        notification.status = 'not_sent'
-        notification.error = 'WhatsApp integration disabled / not configured'
-        await notification.save()
-        failedCount += 1
-        continue
-      }
-
-      try {
-        let sendResult
-        if (mediaUrl) {
-          sendResult = await this.provider.sendMediaMessage({
-            to: recipientPhone,
-            type: 'image',
-            mediaUrl,
-            caption: message,
-          })
-        } else {
-          sendResult = await this.provider.sendTextMessage({
-            to: recipientPhone,
-            text: message,
-          })
-        }
-
-        if (sendResult.success) {
-          notification.status = 'sent'
-          notification.messageId = sendResult.messageId || null
-          notification.sentAt = new Date()
-          sentCount += 1
-        } else {
-          notification.status = 'failed'
-          notification.error = sendResult.error || 'Failed to send'
-          notification.failedAt = new Date()
-          failedCount += 1
-        }
-        await notification.save()
-      } catch (err) {
-        notification.status = 'failed'
-        notification.error = err instanceof Error ? err.message : 'Unknown dispatch error'
-        notification.failedAt = new Date()
-        await notification.save()
-        failedCount += 1
-      }
     }
 
-    campaign.stats.sent = sentCount
-    campaign.stats.failed = failedCount
-    campaign.status = 'completed'
-    campaign.completedAt = new Date()
-    await campaign.save()
+    // Refresh campaign stats based on enqueued records
+    await outboundQueueService.updateCampaignProgress(campaign._id)
+
+    // Trigger sequential processing through the shared rate-limited queue
+    if (params.waitForCompletion) {
+      await outboundQueueService.dispatchPending()
+      const updated = await WhatsAppCampaign.findById(campaign._id)
+      return updated || campaign
+    } else {
+      outboundQueueService.dispatchPending().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(`[whatsapp] Campaign ${campaign._id} dispatch error:`, err)
+      })
+      return campaign
+    }
   }
 
   /**
@@ -632,9 +553,91 @@ class WhatsAppService {
           $inc: updateQuery,
         })
       }
+
+      await outboundQueueService.updateCampaignProgress(notification.campaign)
     }
 
     return true
+  }
+
+  /**
+   * Ingests Waporta delivery-status webhook payloads (message.status events).
+   * Maps: pending -> queued, server -> sent, delivered -> delivered, read/played -> read, error -> failed.
+   * Enforces status hierarchy and idempotent campaign updates.
+   */
+  async processWaportaWebhookPayload(
+    payload: WaportaWebhookPayload | WaportaWebhookPayload[],
+  ): Promise<number> {
+    if (!payload || typeof payload !== 'object') return 0
+
+    const items: WaportaWebhookPayload[] = Array.isArray(payload) ? payload : [payload]
+    let processed = 0
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+
+      // Ignore incoming user messages: inbound-chat is outside current scope
+      const eventName = String(item.event || '').toLowerCase()
+      if (eventName === 'message.received') {
+        continue
+      }
+
+      // Verify sessionId if supplied in event
+      const sessionId = item.sessionId || item.data?.sessionId
+      if (sessionId && env.WAPORTA_SESSION_ID && sessionId !== env.WAPORTA_SESSION_ID) {
+        continue
+      }
+
+      const messageId =
+        item.messageId ||
+        item.data?.messageId ||
+        (typeof item.id === 'string' ? item.id : undefined)
+
+      if (!messageId) continue
+
+      const rawStatus = String(item.status || item.data?.status || '').toLowerCase()
+      let mappedStatus: WhatsAppDeliveryStatus | null = null
+
+      if (rawStatus === 'pending') {
+        mappedStatus = 'queued'
+      } else if (rawStatus === 'server' || rawStatus === 'sent') {
+        mappedStatus = 'sent'
+      } else if (rawStatus === 'delivered') {
+        mappedStatus = 'delivered'
+      } else if (rawStatus === 'read' || rawStatus === 'played') {
+        mappedStatus = 'read'
+      } else if (rawStatus === 'error' || rawStatus === 'failed') {
+        mappedStatus = 'failed'
+      }
+
+      if (!mappedStatus) continue
+
+      let timestamp = new Date()
+      const rawTimestamp = item.timestamp ?? item.data?.timestamp
+      if (rawTimestamp) {
+        const num = Number(rawTimestamp)
+        if (!Number.isNaN(num) && num > 0) {
+          timestamp = new Date(num > 10000000000 ? num : num * 1000)
+        } else {
+          const parsed = new Date(String(rawTimestamp))
+          if (!Number.isNaN(parsed.getTime())) timestamp = parsed
+        }
+      }
+
+      const errorMsg =
+        (typeof item.error === 'string' ? item.error : undefined) ||
+        (typeof item.data?.error === 'string' ? item.data.error : undefined)
+
+      const handled = await this.updateNotificationStatus(
+        messageId,
+        mappedStatus,
+        timestamp,
+        errorMsg,
+      )
+      if (handled) processed += 1
+    }
+
+    return processed
   }
 
   /**

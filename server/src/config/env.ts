@@ -22,11 +22,33 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().positive().default(8),
   // How often the in-process billing job reconciles recurring billing periods.
   BILLING_RECONCILE_INTERVAL_MINUTES: z.coerce.number().positive().default(360),
-  // Evolution API WhatsApp Configuration (disabled by default; safe mock mode when unset)
+  // WhatsApp Provider Configuration (mock by default; supports 'mock', 'evolution', 'waporta')
+  WHATSAPP_PROVIDER: z.enum(['mock', 'evolution', 'waporta']).default('mock'),
   WHATSAPP_ENABLED: z
     .string()
     .optional()
     .transform((value) => value === 'true'),
+  // Waporta WhatsApp Configuration
+  WAPORTA_API_URL: z.string().optional().transform(blankToUndefined),
+  WAPORTA_API_KEY: z.string().optional().transform(blankToUndefined),
+  WAPORTA_SESSION_ID: z.string().default('reborn-fitness'),
+  WAPORTA_WEBHOOK_PATH: z
+    .string()
+    .default('/api/whatsapp/waporta-webhook/replace-with-a-long-random-token'),
+  // Campaign and Outbound Queue Configuration
+  WHATSAPP_CAMPAIGN_DELAY_MS: z.coerce.number().positive().default(4000),
+  // Batch size for sequential outbound message queue processing
+  WHATSAPP_QUEUE_BATCH_SIZE: z.coerce.number().positive().default(5),
+  // Cooldown delay between consecutive batches in milliseconds
+  WHATSAPP_QUEUE_BATCH_COOLDOWN_MS: z.coerce.number().nonnegative().default(5000),
+  // Conservative per-message pacing in milliseconds
+  WHATSAPP_MESSAGE_DELAY_MS: z.coerce.number().nonnegative().default(1500),
+  // Rolling-window rate limiter settings (safely below Waporta's 20 msgs / 60s limit)
+  WHATSAPP_RATE_LIMIT_MAX_PER_WINDOW: z.coerce.number().positive().default(15),
+  WHATSAPP_RATE_LIMIT_WINDOW_MS: z.coerce.number().positive().default(60000),
+  // Bounded retry policy for transient network failures
+  WHATSAPP_MAX_RETRIES: z.coerce.number().nonnegative().default(3),
+  // Evolution API WhatsApp Configuration (retained for rollback option)
   EVOLUTION_API_URL: z.string().optional().transform(blankToUndefined),
   EVOLUTION_API_KEY: z.string().optional().transform(blankToUndefined),
   EVOLUTION_INSTANCE_NAME: z.string().default('reborn-fitness'),
@@ -84,8 +106,18 @@ export const env = {
     .filter(Boolean),
   sessionTtlMs: data.SESSION_TTL_HOURS * 60 * 60 * 1000,
   billingReconcileIntervalMinutes: data.BILLING_RECONCILE_INTERVAL_MINUTES,
-  isWhatsAppConfigured: Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY),
+  whatsappProvider: data.WHATSAPP_PROVIDER,
+  isWhatsAppConfigured:
+    data.WHATSAPP_PROVIDER === 'waporta'
+      ? Boolean(data.WAPORTA_API_URL && data.WAPORTA_API_KEY)
+      : data.WHATSAPP_PROVIDER === 'evolution'
+        ? Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY)
+        : false,
   isWhatsAppEnabled:
     (data.WHATSAPP_ENABLED ?? false) &&
-    Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY),
+    (data.WHATSAPP_PROVIDER === 'waporta'
+      ? Boolean(data.WAPORTA_API_URL && data.WAPORTA_API_KEY)
+      : data.WHATSAPP_PROVIDER === 'evolution'
+        ? Boolean(data.EVOLUTION_API_URL && data.EVOLUTION_API_KEY)
+        : false),
 }

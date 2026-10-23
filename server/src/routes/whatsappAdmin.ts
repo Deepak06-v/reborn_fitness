@@ -6,6 +6,7 @@ import { env } from '../config/env'
 import { WhatsAppCampaign } from '../models/WhatsAppCampaign'
 import { WhatsAppNotification } from '../models/WhatsAppNotification'
 import { whatsAppService } from '../services/whatsapp/whatsapp.service'
+import { outboundQueueService } from '../services/whatsapp/outbound-queue.service'
 import { runWhatsAppReminders } from '../services/whatsappScheduler'
 import { paiseToRupees } from '../utils/money'
 import { ApiError } from '../utils/errors'
@@ -14,7 +15,7 @@ const router = Router()
 
 /**
  * GET /api/admin/whatsapp/status
- * Returns Evolution WhatsApp configuration state and live instance connection status without exposing secrets.
+ * Returns selected WhatsApp provider configuration state and live instance connection status without exposing secrets.
  */
 router.get('/status', async (_req: Request, res: Response) => {
   let connectionState:
@@ -48,12 +49,26 @@ router.get('/status', async (_req: Request, res: Response) => {
     }
   }
 
+  const activeProvider = whatsAppService.getProviderName()
+  const instanceOrSession =
+    activeProvider === 'waporta'
+      ? env.WAPORTA_SESSION_ID
+      : activeProvider === 'evolution'
+        ? env.EVOLUTION_INSTANCE_NAME
+        : null
+
+  const webhookPath =
+    activeProvider === 'waporta'
+      ? env.WAPORTA_WEBHOOK_PATH
+      : env.EVOLUTION_WEBHOOK_PATH
+
   res.json({
-    provider: 'evolution',
+    provider: activeProvider,
     isConfigured: env.isWhatsAppConfigured,
     isEnabled: env.isWhatsAppEnabled,
-    instanceName: env.EVOLUTION_INSTANCE_NAME,
-    webhookPath: env.EVOLUTION_WEBHOOK_PATH,
+    instanceName: instanceOrSession,
+    sessionId: env.WAPORTA_SESSION_ID,
+    webhookPath,
     connectionState,
     rawState,
   })
@@ -127,24 +142,43 @@ router.get('/overdue', async (_req: Request, res: Response, next) => {
 
 /**
  * GET /api/admin/whatsapp/campaigns
- * History of custom broadcast campaigns.
+ * History of custom broadcast campaigns with full progress accounting.
  */
 router.get('/campaigns', async (_req: Request, res: Response, next) => {
   try {
     const campaigns = await WhatsAppCampaign.find().sort({ createdAt: -1 }).limit(50)
     res.json({
-      items: campaigns.map((c) => ({
-        id: c._id.toString(),
-        name: c.name,
-        message: c.message,
-        mediaUrl: c.mediaUrl,
-        recipientFilter: c.recipientFilter,
-        recipientCount: c.recipientCount,
-        stats: c.stats,
-        status: c.status,
-        createdAt: c.createdAt.toISOString(),
-        completedAt: c.completedAt?.toISOString() ?? null,
-      })),
+      items: campaigns.map((c) => {
+        const sent = c.stats.sent || 0
+        const failed = c.stats.failed || 0
+        const delivered = c.stats.delivered || 0
+        const read = c.stats.read || 0
+        const paused = c.stats.paused || 0
+        const processed = sent + failed
+        const remaining = Math.max(0, c.recipientCount - processed)
+
+        return {
+          id: c._id.toString(),
+          name: c.name,
+          message: c.message,
+          mediaUrl: c.mediaUrl,
+          recipientFilter: c.recipientFilter,
+          recipientCount: c.recipientCount,
+          stats: {
+            processed,
+            sent,
+            delivered,
+            read,
+            failed,
+            paused,
+            remaining,
+          },
+          status: c.status,
+          error: c.error,
+          createdAt: c.createdAt.toISOString(),
+          completedAt: c.completedAt?.toISOString() ?? null,
+        }
+      }),
     })
   } catch (err) {
     next(err)
@@ -153,7 +187,7 @@ router.get('/campaigns', async (_req: Request, res: Response, next) => {
 
 /**
  * GET /api/admin/whatsapp/history
- * Complete message dispatch logs.
+ * Complete message dispatch logs with attempt count and pause telemetry.
  */
 router.get('/history', async (req: Request, res: Response, next) => {
   try {
@@ -170,7 +204,11 @@ router.get('/history', async (req: Request, res: Response, next) => {
         memberName: (log.member as unknown as { fullName?: string })?.fullName ?? 'Unknown',
         phoneNumber: log.phoneNumber,
         type: log.type,
+        provider: log.provider || 'unknown',
         status: log.status,
+        attempts: log.attempts || 0,
+        lastAttemptAt: log.lastAttemptAt?.toISOString() ?? null,
+        pausedAt: log.pausedAt?.toISOString() ?? null,
         message: log.message,
         mediaUrl: log.mediaUrl,
         sentAt: log.sentAt?.toISOString() ?? null,
@@ -180,6 +218,46 @@ router.get('/history', async (req: Request, res: Response, next) => {
         createdAt: log.createdAt.toISOString(),
       })),
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/whatsapp/queue/status
+ * Telemetry and status of the shared outbound rate-limited queue.
+ */
+router.get('/queue/status', async (_req: Request, res: Response, next) => {
+  try {
+    const queueStatus = await outboundQueueService.getQueueStatus()
+    res.json(queueStatus)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/whatsapp/queue/pause
+ * Manually pauses the outbound messaging queue.
+ */
+router.post('/queue/pause', async (req: Request, res: Response, next) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'Paused by administrator'
+    outboundQueueService.pauseQueue(reason)
+    res.json({ success: true, message: 'Outbound messaging queue paused' })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/whatsapp/queue/resume
+ * Resumes the outbound messaging queue.
+ */
+router.post('/queue/resume', async (_req: Request, res: Response, next) => {
+  try {
+    const resumedCount = await outboundQueueService.resumeQueue()
+    res.json({ success: true, resumedCount, message: 'Outbound messaging queue resumed' })
   } catch (err) {
     next(err)
   }

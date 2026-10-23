@@ -5,6 +5,7 @@ import { env } from './config/env'
 import { ensureMonthlyPaymentIndexes } from './models/MonthlyPayment'
 import { reconcileAllBilling, startBillingScheduler } from './services/billing'
 import { startWhatsAppScheduler } from './services/whatsappScheduler'
+import { outboundQueueService } from './services/whatsapp/outbound-queue.service'
 
 async function start() {
   await connectDatabase()
@@ -19,6 +20,7 @@ async function start() {
   })
   startBillingScheduler()
   startWhatsAppScheduler()
+  outboundQueueService.startQueueWorker()
   const app = createApp()
   app.listen(env.PORT, () => {
     // eslint-disable-next-line no-console

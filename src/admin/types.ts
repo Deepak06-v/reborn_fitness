@@ -248,6 +248,7 @@ export interface WhatsAppStatusResponse {
   isConfigured: boolean
   isEnabled: boolean
   instanceName?: string | null
+  sessionId?: string | null
   webhookPath: string
   connectionState?: WhatsAppConnectionState
   rawState?: string
@@ -295,12 +296,16 @@ export interface WhatsAppCampaignItem {
   recipientFilter: string
   recipientCount: number
   stats: {
+    processed?: number
     sent: number
     delivered: number
     read: number
     failed: number
+    paused?: number
+    remaining?: number
   }
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'paused'
+  error?: string | null
   createdAt: string
   completedAt: string | null
 }
@@ -311,7 +316,11 @@ export interface WhatsAppHistoryItem {
   memberName: string
   phoneNumber: string
   type: string
+  provider?: string
   status: WhatsAppDeliveryStatus
+  attempts?: number
+  lastAttemptAt?: string | null
+  pausedAt?: string | null
   message: string | null
   mediaUrl: string | null
   sentAt: string | null

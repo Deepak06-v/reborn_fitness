@@ -326,12 +326,19 @@ export function WhatsAppNotificationsPage() {
     { id: 'history', label: 'Campaign & Message History', count: campaigns.length },
   ]
 
+  const providerName =
+    status?.provider === 'waporta'
+      ? 'Waporta'
+      : status?.provider === 'evolution'
+        ? 'Evolution API'
+        : 'WhatsApp'
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Automation & Messaging"
         title="WhatsApp Notifications"
-        description="Automated fee reminders, daily overdue tracking, and member broadcasts via Evolution API."
+        description="Automated fee reminders, daily overdue tracking, and member broadcasts via Waporta WhatsApp API."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -367,9 +374,9 @@ export function WhatsAppNotificationsPage() {
               WhatsApp Integration Offline / Mock Mode Active
             </p>
             <p className="mt-1 font-body text-amber-200/80">
-              Evolution API credentials are not configured in the environment.
+              Live WhatsApp credentials are not configured in the environment.
               All notification workflows, deduplication, and queues run safely in simulation mode.
-              To enable live WhatsApp delivery, set <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ENABLED=true</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">EVOLUTION_API_URL</code>, and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">EVOLUTION_API_KEY</code> in your backend environment.
+              To enable live WhatsApp delivery, set <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_ENABLED=true</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WHATSAPP_PROVIDER=waporta</code>, <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WAPORTA_API_URL</code>, and <code className="rounded bg-black/40 px-1 py-0.5 font-mono text-white">WAPORTA_API_KEY</code> in your backend environment.
             </p>
           </div>
         </div>
@@ -378,10 +385,10 @@ export function WhatsAppNotificationsPage() {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div className="text-xs">
             <p className="font-semibold uppercase tracking-wider text-amber-300">
-              Evolution API Configured / Instance Disconnected
+              {providerName} Configured / Session Disconnected
             </p>
             <p className="mt-1 font-body text-amber-200/80">
-              Evolution API credentials are valid, but the WhatsApp instance ({status.instanceName || 'reborn-fitness'}) is not connected to a WhatsApp Web session. Complete QR code pairing in Phase 2.
+              {providerName} credentials are valid, but the session ({status.instanceName || status.sessionId || 'reborn-fitness'}) is not connected to a WhatsApp Web session. Complete QR code pairing on the gateway.
             </p>
           </div>
         </div>
@@ -390,10 +397,10 @@ export function WhatsAppNotificationsPage() {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
           <div className="text-xs">
             <p className="font-semibold uppercase tracking-wider text-red-300">
-              Evolution API Unreachable
+              {providerName} Unreachable
             </p>
             <p className="mt-1 font-body text-red-200/80">
-              The backend could not reach the configured Evolution API server. Ensure the service is running and accessible.
+              The backend could not reach the configured {providerName} server. Ensure the service is running and accessible.
             </p>
           </div>
         </div>
@@ -432,14 +439,14 @@ export function WhatsAppNotificationsPage() {
                 : status?.connectionState === 'unreachable'
                   ? 'Unreachable'
                   : status?.isConfigured
-                    ? 'Evolution'
+                    ? (status?.provider === 'waporta' ? 'Waporta' : 'Evolution')
                     : 'Safe Mock'
           }
           hint={
             status?.connectionState === 'connected'
-              ? `Instance: ${status.instanceName || 'reborn-fitness'}`
+              ? `Session: ${status.instanceName || status.sessionId || 'reborn-fitness'}`
               : status?.isConfigured
-                ? 'Evolution credentials set'
+                ? `${providerName} credentials set`
                 : 'Credentials pending'
           }
           icon={<CheckCircle2 className="h-4 w-4" />}
@@ -801,7 +808,7 @@ export function WhatsAppNotificationsPage() {
                 Broadcast Campaigns
               </h2>
               <p className="mt-1 font-body text-xs text-muted">
-                Recent broadcast announcements with real-time Evolution delivery tracking.
+                Recent broadcast announcements with real-time delivery tracking.
               </p>
             </div>
 
@@ -817,15 +824,31 @@ export function WhatsAppNotificationsPage() {
                   <div key={c.id} className="p-6">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 className="font-display text-sm font-bold uppercase tracking-wide text-white">
-                          {c.name}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-display text-sm font-bold uppercase tracking-wide text-white">
+                            {c.name}
+                          </h3>
+                          <span
+                            className={cn(
+                              'inline-flex items-center rounded px-2 py-0.5 font-mono text-[0.625rem] font-semibold uppercase',
+                              c.status === 'completed'
+                                ? 'bg-lime/20 text-lime border border-lime/40'
+                                : c.status === 'processing'
+                                  ? 'bg-accent/20 text-accent border border-accent/40 animate-pulse'
+                                  : c.status === 'paused'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : 'bg-red-500/20 text-red-400 border border-red-500/40',
+                            )}
+                          >
+                            {c.status}
+                          </span>
+                        </div>
                         <p className="mt-1 font-mono text-[0.625rem] text-dim">
                           Dispatched: {formatDate(c.createdAt)} • Target: {c.recipientFilter}
                         </p>
                       </div>
                       <span className="inline-flex items-center rounded-full border border-hairline bg-white/5 px-3 py-1 font-mono text-[0.625rem] uppercase text-muted">
-                        {c.recipientCount} Recipients
+                        {c.recipientCount} Total Recipients
                       </span>
                     </div>
 
@@ -833,8 +856,20 @@ export function WhatsAppNotificationsPage() {
                       {c.message}
                     </p>
 
-                    {/* Stats bar */}
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {c.error && (
+                      <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 font-mono text-[0.6875rem] text-amber-200">
+                        {c.error}
+                      </p>
+                    )}
+
+                    {/* Full Campaign Progress Accounting */}
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                        <span className="font-mono text-[0.625rem] text-dim">Processed</span>
+                        <p className="font-display text-sm font-bold text-white">
+                          {c.stats.processed ?? ((c.stats.sent || 0) + (c.stats.failed || 0))}
+                        </p>
+                      </div>
                       <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
                         <span className="font-mono text-[0.625rem] text-dim">Sent</span>
                         <p className="font-display text-sm font-bold text-accent">
@@ -857,6 +892,18 @@ export function WhatsAppNotificationsPage() {
                         <span className="font-mono text-[0.625rem] text-dim">Failed</span>
                         <p className="font-display text-sm font-bold text-red-400">
                           {c.stats.failed}
+                        </p>
+                      </div>
+                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                        <span className="font-mono text-[0.625rem] text-dim">Paused</span>
+                        <p className="font-display text-sm font-bold text-amber-300">
+                          {c.stats.paused ?? 0}
+                        </p>
+                      </div>
+                      <div className="rounded border border-hairline bg-surface/50 p-2 text-center">
+                        <span className="font-mono text-[0.625rem] text-dim">Remaining</span>
+                        <p className="font-display text-sm font-bold text-dim">
+                          {c.stats.remaining ?? Math.max(0, c.recipientCount - ((c.stats.sent || 0) + (c.stats.failed || 0)))}
                         </p>
                       </div>
                     </div>
@@ -905,7 +952,17 @@ export function WhatsAppNotificationsPage() {
                         </td>
                         <td className="px-6 py-3 font-mono text-muted">{log.phoneNumber}</td>
                         <td className="px-6 py-3 font-mono text-[0.625rem] uppercase text-dim">
-                          {log.type}
+                          <div>{log.type}</div>
+                          {log.provider && (
+                            <div className="text-[0.5625rem] text-muted/60 lowercase">
+                              via {log.provider}
+                            </div>
+                          )}
+                          {log.attempts !== undefined && log.attempts > 0 && (
+                            <div className="text-[0.5625rem] text-dim">
+                              attempts: {log.attempts}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-3">
                           <WhatsAppDeliveryBadge
@@ -1000,12 +1057,17 @@ export function WhatsAppNotificationsPage() {
         </div>
       </AdminModal>
 
-      {/* Evolution API License / Attribution notice */}
-      <div className="flex flex-col items-center justify-between gap-2 border-t border-hairline/60 pt-4 text-[0.6875rem] text-muted sm:flex-row">
-        <span>REBORN FITNESS Automated WhatsApp Notification System</span>
-        <span className="font-mono text-[0.625rem] text-dim">
-          WhatsApp messaging powered by <span className="text-muted">Evolution API</span>
-        </span>
+      {/* WhatsApp Provider Attribution & Compliance Notice */}
+      <div className="flex flex-col gap-2 border-t border-hairline/60 pt-4 text-[0.6875rem] text-muted">
+        <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
+          <span>REBORN FITNESS Controlled WhatsApp Notification System</span>
+          <span className="font-mono text-[0.625rem] text-dim">
+            WhatsApp messaging powered by <span className="text-muted">{status?.provider === 'evolution' ? 'Evolution API' : 'Waporta'}</span>
+          </span>
+        </div>
+        <p className="font-mono text-[0.625rem] text-dim">
+          Notice: Shared rate limits and rolling-window pacing reduce operational risk but do not guarantee immunity from WhatsApp account restrictions. Messages must only be sent to opted-in members with active gym relations.
+        </p>
       </div>
     </div>
   )
