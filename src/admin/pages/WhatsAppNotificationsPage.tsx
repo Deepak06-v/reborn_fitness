@@ -493,7 +493,7 @@ export function WhatsAppNotificationsPage() {
           }
           hint={
             status?.connectionState === 'connected'
-              ? `Phone: ${status.phoneNumberId || 'Configured'} • API: ${status.graphApiVersion || 'v21.0'}`
+              ? `Phone: ${status.phoneNumberId || 'Configured'} • API: ${status.graphApiVersion || 'v26.0'}`
               : status?.isConfigured
                 ? `${providerName} credentials set`
                 : 'Credentials pending'

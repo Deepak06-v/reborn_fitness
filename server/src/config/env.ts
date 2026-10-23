@@ -31,9 +31,9 @@ const envSchema = z.object({
   // Meta WhatsApp Cloud API Configuration
   WHATSAPP_GRAPH_API_VERSION: z
     .string()
-    .default('v21.0')
+    .default('v26.0')
     .refine((v) => /^v\d+(\.\d+)?$/.test(v), {
-      message: 'WHATSAPP_GRAPH_API_VERSION must be a valid Meta Graph API version, e.g. v21.0',
+      message: 'WHATSAPP_GRAPH_API_VERSION must be a valid Meta Graph API version, e.g. v26.0',
     }),
   WHATSAPP_ACCESS_TOKEN: z.string().optional().transform(blankToUndefined),
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional().transform(blankToUndefined),

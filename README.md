@@ -317,7 +317,7 @@ Fonts: **Space Grotesk** (display), **Inter** (body), **JetBrains Mono** (teleme
 
 ## WhatsApp Notifications (Official Meta WhatsApp Cloud API)
 
-REBORN FITNESS includes a native WhatsApp Notification Module integrated directly into the operations console, powered exclusively by **Meta's official WhatsApp Business Platform Cloud API** via Meta Graph API (`v21.0`).
+REBORN FITNESS includes a native WhatsApp Notification Module integrated directly into the operations console, powered exclusively by **Meta's official WhatsApp Business Platform Cloud API** via Meta Graph API (`v26.0`).
 
 All legacy third-party gateways (Waporta, Evolution API, Baileys) have been removed.
 
@@ -362,7 +362,7 @@ WHATSAPP_PROVIDER=cloud_api
 WHATSAPP_ENABLED=false
 
 # Meta Graph API version
-WHATSAPP_GRAPH_API_VERSION=v21.0
+WHATSAPP_GRAPH_API_VERSION=v26.0
 
 # Meta Cloud API Credentials (obtain from Meta Developer Portal / Business Manager)
 WHATSAPP_ACCESS_TOKEN=your-meta-system-user-access-token
@@ -459,7 +459,7 @@ Wait for Meta's review and approval (typically a few minutes to hours for utilit
 1. Open your Render dashboard for the `reborn-fitness-server` service.
 2. In **Environment**, configure:
    - `WHATSAPP_PROVIDER=cloud_api`
-   - `WHATSAPP_GRAPH_API_VERSION=v21.0`
+   - `WHATSAPP_GRAPH_API_VERSION=v26.0`
    - `WHATSAPP_ACCESS_TOKEN=<Permanent System User Token>`
    - `WHATSAPP_PHONE_NUMBER_ID=<Phone Number ID>`
    - `WHATSAPP_BUSINESS_ACCOUNT_ID=<WABA ID>`

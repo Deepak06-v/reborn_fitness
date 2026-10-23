@@ -31,7 +31,7 @@ export class MetaCloudWhatsAppProvider implements WhatsAppProvider {
   private readonly requestTimeoutMs: number
 
   constructor(config: MetaCloudWhatsAppConfig) {
-    this.graphApiVersion = (config.graphApiVersion || 'v21.0').trim()
+    this.graphApiVersion = (config.graphApiVersion || 'v26.0').trim()
     this.accessToken = (config.accessToken || '').trim()
     this.phoneNumberId = (config.phoneNumberId || '').trim()
     this.businessAccountId = config.businessAccountId?.trim()

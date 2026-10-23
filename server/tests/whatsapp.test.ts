@@ -263,7 +263,7 @@ describe('WhatsApp Notification Module (Meta Cloud API)', () => {
 
   describe('MetaCloudWhatsAppProvider Unit Tests', () => {
     const config = {
-      graphApiVersion: 'v21.0',
+      graphApiVersion: 'v26.0',
       accessToken: 'EAAG_test_access_token_mock_secret',
       phoneNumberId: '1000987654321',
       businessAccountId: '2000987654321',
@@ -274,7 +274,7 @@ describe('WhatsApp Notification Module (Meta Cloud API)', () => {
     it('initializes properly and reports isConfigured accurately', () => {
       const provider = new MetaCloudWhatsAppProvider(config)
       expect(provider.isConfigured).toBe(true)
-      expect(provider.graphApiVersion).toBe('v21.0')
+      expect(provider.graphApiVersion).toBe('v26.0')
       expect(provider.phoneNumberId).toBe('1000987654321')
 
       const unconfigured = new MetaCloudWhatsAppProvider({})
@@ -312,7 +312,7 @@ describe('WhatsApp Notification Module (Meta Cloud API)', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1)
       const [url, init] = mockFetch.mock.calls[0]
-      expect(url).toBe('https://graph.facebook.com/v21.0/1000987654321/messages')
+      expect(url).toBe('https://graph.facebook.com/v26.0/1000987654321/messages')
       expect(init.method).toBe('POST')
       expect(init.headers.Authorization).toBe('Bearer EAAG_test_access_token_mock_secret')
       expect(init.headers['Content-Type']).toBe('application/json')
@@ -464,7 +464,7 @@ describe('WhatsApp Notification Module (Meta Cloud API)', () => {
       expect(status.verifiedName).toBe('REBORN FITNESS')
       expect(status.qualityRating).toBe('GREEN')
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://graph.facebook.com/v21.0/1000987654321?fields=verified_name,display_phone_number,quality_rating,code_verification_status',
+        'https://graph.facebook.com/v26.0/1000987654321?fields=verified_name,display_phone_number,quality_rating,code_verification_status',
         expect.anything(),
       )
     })
