@@ -17,7 +17,7 @@ export interface WhatsAppProvider {
 
   sendTemplateMessage(options: SendTemplateOptions): Promise<WhatsAppMessageResult>
 
-  verifyWebhookSecret?(providedSecret?: string): boolean
-
   verifyWebhookSignature?(rawBody: Buffer | string, signatureHeader?: string): boolean
+
+  verifyWebhookToken?(mode?: string, token?: string): boolean
 }

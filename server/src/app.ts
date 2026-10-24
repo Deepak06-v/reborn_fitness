@@ -18,7 +18,6 @@ import dashboardRouter from './routes/dashboard'
 import plansRouter from './routes/plans'
 import whatsappAdminRouter from './routes/whatsappAdmin'
 import whatsappWebhookRouter from './routes/whatsappWebhook'
-import waportaWebhookRouter from './routes/waportaWebhook'
 
 export function createApp() {
   const app = express()
@@ -79,14 +78,9 @@ export function createApp() {
     res.json({ status: 'ok' })
   })
 
-  // Waporta WhatsApp Webhook endpoint (mounted at unguessable secret path)
-  if (env.WAPORTA_WEBHOOK_PATH) {
-    app.use(env.WAPORTA_WEBHOOK_PATH, waportaWebhookRouter)
-  }
-
-  // Evolution API WhatsApp Webhook endpoint (retained for rollback option; secret verified)
-  app.use(env.EVOLUTION_WEBHOOK_PATH || '/api/whatsapp/evolution-webhook', whatsappWebhookRouter)
-  if (env.EVOLUTION_WEBHOOK_PATH !== '/api/whatsapp/webhook') {
+  // Meta WhatsApp Cloud API Webhook endpoint
+  app.use(env.WHATSAPP_WEBHOOK_PATH || '/api/whatsapp/webhook', whatsappWebhookRouter)
+  if (env.WHATSAPP_WEBHOOK_PATH !== '/api/whatsapp/webhook') {
     app.use('/api/whatsapp/webhook', whatsappWebhookRouter)
   }
 

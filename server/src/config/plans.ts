@@ -39,6 +39,18 @@ export const PLANS: readonly MembershipPlan[] = [
   { id: 'thirteen-months', name: '13 Months', durationMonths: 13, pricePaise: 1_300_000 },
   { id: 'fourteen-months', name: '14 Months', durationMonths: 14, pricePaise: 1_400_000 },
   { id: 'fifteen-months', name: '15 Months', durationMonths: 15, pricePaise: 1_300_000 },
+  {
+    id: 'pt-3-months',
+    name: 'Personal Training — 3 Months',
+    durationMonths: 3,
+    pricePaise: 1_200_000,
+  },
+  {
+    id: 'pt-6-months',
+    name: 'Personal Training — 6 Months',
+    durationMonths: 6,
+    pricePaise: 2_000_000,
+  },
 ] as const
 
 export const PLAN_IDS = PLANS.map((plan) => plan.id) as [string, ...string[]]

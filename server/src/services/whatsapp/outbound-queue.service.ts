@@ -8,6 +8,7 @@ import {
 } from '../../models/WhatsAppNotification'
 import { outboundRateLimiter } from './outbound-rate-limiter'
 import { whatsAppService } from './whatsapp.service'
+import type { WhatsAppTemplateComponent } from './whatsapp.types'
 
 export interface QueueProgressSummary {
   processed: number
@@ -227,7 +228,14 @@ export class OutboundQueueService {
     const provider = whatsAppService.getProvider()
     try {
       let sendResult
-      if (notification.mediaUrl) {
+      if (notification.templateName) {
+        sendResult = await provider.sendTemplateMessage({
+          to: notification.phoneNumber,
+          templateName: notification.templateName,
+          languageCode: (notification.metadata?.languageCode as string) || 'en_US',
+          components: notification.metadata?.components as WhatsAppTemplateComponent[] | undefined,
+        })
+      } else if (notification.mediaUrl) {
         sendResult = await provider.sendMediaMessage({
           to: notification.phoneNumber,
           type: 'image',
@@ -313,11 +321,11 @@ export class OutboundQueueService {
       return 'failed'
     }
 
-    // 3. Recipient non-retryable error (e.g. 422 unregistered on WhatsApp)
-    if (httpStatus === 422) {
+    // 3. Recipient non-retryable error (e.g. 422 unregistered on WhatsApp, 400 invalid recipient/parameter)
+    if (httpStatus === 422 || httpStatus === 400) {
       notification.status = 'failed'
       notification.failedAt = new Date()
-      notification.error = errorMsg || 'Recipient is not registered on WhatsApp (HTTP 422)'
+      notification.error = errorMsg || `Non-retryable request error (HTTP ${httpStatus})`
       await notification.save()
 
       if (notification.campaign) {

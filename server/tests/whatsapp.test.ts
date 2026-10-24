@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import request from 'supertest'
@@ -20,29 +21,79 @@ import { whatsAppService } from '../src/services/whatsapp/whatsapp.service'
 import { env } from '../src/config/env'
 import { outboundRateLimiter } from '../src/services/whatsapp/outbound-rate-limiter'
 import { outboundQueueService } from '../src/services/whatsapp/outbound-queue.service'
-import { EvolutionWhatsAppProvider } from '../src/services/whatsapp/evolution-whatsapp.provider'
+import { MetaCloudWhatsAppProvider } from '../src/services/whatsapp/meta-cloud-whatsapp.provider'
 import { MockWhatsAppProvider } from '../src/services/whatsapp/mock-whatsapp.provider'
-import { WaportaWhatsAppProvider } from '../src/services/whatsapp/waporta-whatsapp.provider'
 import {
   formatWhatsAppPhone,
-  formatWaportaPhone,
-  formatEvolutionPhone,
   formatMetaPhone,
   normalizePhone,
   isValidIndianMobile,
 } from '../src/utils/phone'
 import {
-  formatUpcomingDueMessage,
-  formatOverdueMessage,
-  formatGymClosureMessage,
-  formatFestivalOfferMessage,
+  buildFestiveOfferTemplateComponents,
+  buildGymClosureTemplateComponents,
+  buildOverdueTemplateComponents,
+  buildUpcomingDueTemplateComponents,
   formatCustomMessage,
+  formatFestivalOfferMessage,
+  formatGymClosureMessage,
+  formatOverdueMessage,
+  formatUpcomingDueMessage,
+  getApprovedTemplateConfig,
 } from '../src/services/whatsapp/whatsapp.templates'
 import type { Express } from 'express'
 
-describe('WhatsApp Notification Module (Evolution API)', () => {
+describe('WhatsApp Notification Module (Meta Cloud API)', () => {
   let app: Express
   let mockProvider: MockWhatsAppProvider
+  let memberSeq = 1
+  let invSeq = 1
+
+  async function createTestMember(overrides: Partial<Parameters<typeof Member.create>[0]> = {}) {
+    const seq = String(memberSeq++).padStart(4, '0')
+    return Member.create({
+      memberId: `RBF-${seq}`,
+      fullName: `Test Member ${seq}`,
+      phone: `98765${seq}`,
+      joiningDate: new Date(),
+      monthlyFeePaise: 150000,
+      status: 'active',
+      ...overrides,
+    })
+  }
+
+  async function createTestPayment(
+    member: { _id: unknown; memberId: string; planName?: string | null },
+    overrides: {
+      dueDate?: Date
+      periodStart?: Date
+      periodEnd?: Date
+      dueAmountPaise?: number
+      amountPaidPaise?: number
+      status?: 'unpaid' | 'partial' | 'paid'
+      planName?: string
+      invoiceNumber?: string
+    } = {},
+  ) {
+    const periodStart = overrides.periodStart || new Date('2026-10-25')
+    const periodEnd = overrides.periodEnd || new Date('2026-11-24')
+    const dueDate = overrides.dueDate || periodStart
+    const invoiceNumber = overrides.invoiceNumber || `RBF-INV-${String(invSeq++).padStart(4, '0')}`
+
+    return MonthlyPayment.create({
+      member: member._id,
+      memberId: member.memberId,
+      billingMonth: '2026-10',
+      invoiceNumber,
+      dueDate,
+      periodStart,
+      periodEnd,
+      dueAmountPaise: overrides.dueAmountPaise ?? 150000,
+      amountPaidPaise: overrides.amountPaidPaise ?? 0,
+      status: overrides.status || 'unpaid',
+      planName: overrides.planName || member.planName || 'Monthly',
+    })
+  }
 
   beforeAll(async () => {
     await setupTestEnv()
@@ -57,6 +108,8 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
     await clearDatabase()
     await createAdmin()
     outboundRateLimiter.reset()
+    memberSeq = 1
+    invSeq = 1
     mockProvider = new MockWhatsAppProvider(true)
     whatsAppService.setProvider(mockProvider)
     vi.restoreAllMocks()
@@ -76,17 +129,14 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
       expect(normalizePhone('00919876543210')).toBe('9876543210')
     })
 
-    it('formats phone into WhatsApp/Waporta recipient format (91XXXXXXXXXX)', () => {
+    it('formats phone into Meta Cloud API recipient format (91XXXXXXXXXX)', () => {
       expect(formatWhatsAppPhone('+91 98765-43210')).toBe('919876543210')
-      expect(formatWaportaPhone('+91 98765-43210')).toBe('919876543210')
-      expect(formatEvolutionPhone('+91 98765-43210')).toBe('919876543210')
-      expect(formatWaportaPhone('09876543210')).toBe('919876543210')
-      expect(formatWaportaPhone('9876543210')).toBe('919876543210')
-      expect(formatWaportaPhone('+91 91 9876543210')).toBe('919876543210')
-      expect(formatWaportaPhone('12345')).toBeNull()
-      expect(formatWaportaPhone('abcdef')).toBeNull()
-      // Backwards-compatible alias check
-      expect(formatMetaPhone('9876543210')).toBe('919876543210')
+      expect(formatMetaPhone('+91 98765-43210')).toBe('919876543210')
+      expect(formatWhatsAppPhone('09876543210')).toBe('919876543210')
+      expect(formatWhatsAppPhone('9876543210')).toBe('919876543210')
+      expect(formatWhatsAppPhone('+91 91 9876543210')).toBe('919876543210')
+      expect(formatWhatsAppPhone('12345')).toBeNull()
+      expect(formatWhatsAppPhone('abcdef')).toBeNull()
     })
 
     it('validates standard Indian mobile numbers', () => {
@@ -98,360 +148,600 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
     })
   })
 
-  describe('Message Formatting Utilities', () => {
-    it('formats upcoming due reminder text', () => {
-      const msg = formatUpcomingDueMessage({
-        memberName: 'Rahul',
+  describe('Meta Template Payload & Placeholder Validation', () => {
+    it('retrieves configured approved template configs', () => {
+      const dueConfig = getApprovedTemplateConfig('FEE_DUE_2_DAYS')
+      expect(dueConfig.templateName).toBe(env.WHATSAPP_TEMPLATE_FEE_DUE)
+      expect(dueConfig.languageCode).toBe('en_US')
+
+      const overdueConfig = getApprovedTemplateConfig('FEE_OVERDUE')
+      expect(overdueConfig.templateName).toBe(env.WHATSAPP_TEMPLATE_FEE_OVERDUE)
+      expect(overdueConfig.languageCode).toBe('en_US')
+    })
+
+    it('builds upcoming fee due template components with exact parameter ordering', () => {
+      const components = buildUpcomingDueTemplateComponents({
+        memberName: 'Rahul Sharma',
         planName: 'Monthly – ₹1,500',
-        dueDate: '24/10/2026',
+        dueDate: '25/10/2026',
         amountDue: '1,500',
       })
-      expect(msg).toContain('Rahul')
-      expect(msg).toContain('Monthly – ₹1,500')
-      expect(msg).toContain('₹1,500')
-      expect(msg).toContain('24/10/2026')
+
+      expect(components).toHaveLength(1)
+      expect(components[0].type).toBe('body')
+      expect(components[0].parameters).toEqual([
+        { type: 'text', text: 'Rahul Sharma' },
+        { type: 'text', text: 'Monthly – ₹1,500' },
+        { type: 'text', text: '25/10/2026' },
+        { type: 'text', text: '1,500' },
+      ])
     })
 
-    it('formats overdue fee reminder text', () => {
-      const msg = formatOverdueMessage({
-        memberName: 'Anita',
-        planName: '15 Days – ₹500',
+    it('builds overdue fee template components with positive daysOverdue', () => {
+      const components = buildOverdueTemplateComponents({
+        memberName: 'Rahul Sharma',
+        planName: 'Monthly – ₹1,500',
         daysOverdue: 3,
-        amountDue: '500',
+        amountDue: '1,500',
       })
-      expect(msg).toContain('Anita')
-      expect(msg).toContain('3 days')
-      expect(msg).toContain('₹500')
+
+      expect(components).toHaveLength(1)
+      expect(components[0].type).toBe('body')
+      expect(components[0].parameters).toEqual([
+        { type: 'text', text: 'Rahul Sharma' },
+        { type: 'text', text: '3' },
+        { type: 'text', text: 'Monthly – ₹1,500' },
+        { type: 'text', text: '1,500' },
+      ])
     })
 
-    it('formats gym closure announcements and festival offers', () => {
-      const closure = formatGymClosureMessage({
-        memberName: 'Vikram',
-        reason: 'Maintenance',
-        dates: 'Sunday, 25th Oct',
-        reopenDate: 'Monday, 26th Oct',
+    it('builds gym closure and festive offer template components', () => {
+      const closure = buildGymClosureTemplateComponents({
+        memberName: 'Rahul',
+        reason: 'Diwali Maintenance',
+        dates: '28th Oct',
+        reopenDate: '29th Oct',
       })
-      expect(closure).toContain('Maintenance')
-      expect(closure).toContain('Sunday, 25th Oct')
+      expect(closure[0].parameters).toHaveLength(4)
+      expect(closure[0].parameters[1].text).toBe('Diwali Maintenance')
 
-      const festival = formatFestivalOfferMessage({
-        memberName: 'Vikram',
+      const festive = buildFestiveOfferTemplateComponents({
+        memberName: 'Rahul',
         occasion: 'Diwali',
-        offerDetails: 'Get 2 months free on annual plans',
-        validUntil: 'Nov 15',
+        offerDetails: 'Annual plan at 20% discount',
+        validUntil: '31st Oct',
       })
-      expect(festival).toContain('Diwali')
-      expect(festival).toContain('Get 2 months free')
+      expect(festive[0].parameters).toHaveLength(4)
+      expect(festive[0].parameters[2].text).toBe('Annual plan at 20% discount')
+    })
 
-      const custom = formatCustomMessage({
-        memberName: 'Vikram',
-        message: 'Personal training slots now open!',
+    it('validates template placeholder parameters and rejects missing fields', () => {
+      expect(() =>
+        buildUpcomingDueTemplateComponents({
+          memberName: '',
+          planName: 'Monthly',
+          dueDate: '25/10/2026',
+          amountDue: '1500',
+        }),
+      ).toThrowError(/memberName is required/)
+
+      expect(() =>
+        buildOverdueTemplateComponents({
+          memberName: 'Rahul',
+          planName: 'Monthly',
+          daysOverdue: 0,
+          amountDue: '1500',
+        }),
+      ).toThrowError(/daysOverdue must be a positive integer/)
+    })
+
+    it('formats preview texts accurately', () => {
+      const duePreview = formatUpcomingDueMessage({
+        memberName: 'Aman',
+        planName: 'Monthly',
+        dueDate: '10/11/2026',
+        amountDue: '1,500',
       })
-      expect(custom).toContain('Personal training slots now open!')
+      expect(duePreview).toContain('Aman')
+      expect(duePreview).toContain('₹1,500')
+
+      const overduePreview = formatOverdueMessage({
+        memberName: 'Aman',
+        planName: 'Monthly',
+        daysOverdue: 5,
+        amountDue: '1,500',
+      })
+      expect(overduePreview).toContain('overdue by 5 days')
+
+      const customPreview = formatCustomMessage({
+        memberName: 'Aman',
+        message: 'Personal training available',
+      })
+      expect(customPreview).toContain('REBORN FITNESS')
     })
   })
 
-  describe('EvolutionWhatsAppProvider Unit Tests', () => {
-    it('initializes properly and reports isConfigured correctly', () => {
-      const valid = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080/',
-        apiKey: 'secret_key',
-        instanceName: 'reborn-fitness',
-      })
-      expect(valid.isConfigured).toBe(true)
+  describe('MetaCloudWhatsAppProvider Unit Tests', () => {
+    const config = {
+      graphApiVersion: 'v26.0',
+      accessToken: 'EAAG_test_access_token_mock_secret',
+      phoneNumberId: '1000987654321',
+      businessAccountId: '2000987654321',
+      appSecret: 'test_meta_app_secret_12345',
+      webhookVerifyToken: 'meta_verify_token_secure_987',
+    }
 
-      const incomplete = new EvolutionWhatsAppProvider({
-        apiUrl: '',
-        apiKey: '',
-        instanceName: 'reborn-fitness',
-      })
-      expect(incomplete.isConfigured).toBe(false)
+    it('initializes properly and reports isConfigured accurately', () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      expect(provider.isConfigured).toBe(true)
+      expect(provider.graphApiVersion).toBe('v26.0')
+      expect(provider.phoneNumberId).toBe('1000987654321')
+
+      const unconfigured = new MetaCloudWhatsAppProvider({})
+      expect(unconfigured.isConfigured).toBe(false)
     })
 
-    it('sends text messages to the correct Evolution endpoint with apikey header', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080/',
-        apiKey: 'test-api-key',
-        instanceName: 'reborn-fitness',
+    it('sends template messages to the correct Meta Graph API endpoint with Authorization header', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          messaging_product: 'whatsapp',
+          contacts: [{ input: '919876543210', wa_id: '919876543210' }],
+          messages: [{ id: 'wamid.HBgLMTAwMDk4NzY1NDMyMQ==' }],
+        }),
       })
+      vi.stubGlobal('fetch', mockFetch)
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            key: { id: 'evo_msg_123', remoteJid: '919876543210@s.whatsapp.net' },
-            status: 'PENDING',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
-
-      const result = await provider.sendTextMessage({
+      const result = await provider.sendTemplateMessage({
         to: '919876543210',
-        text: 'Your fee is due in two days.',
+        templateName: 'reborn_fee_due_reminder',
+        languageCode: 'en_US',
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: 'Rahul' }],
+          },
+        ],
       })
 
       expect(result.success).toBe(true)
-      expect(result.messageId).toBe('evo_msg_123')
+      expect(result.messageId).toBe('wamid.HBgLMTAwMDk4NzY1NDMyMQ==')
       expect(result.status).toBe('sent')
 
-      expect(fetchSpy).toHaveBeenCalledTimes(1)
-      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]
-      expect(calledUrl).toBe('http://localhost:8080/message/sendText/reborn-fitness')
-      expect((calledInit?.headers as Record<string, string>)?.apikey).toBe('test-api-key')
-      expect(JSON.parse(calledInit?.body as string)).toEqual({
-        number: '919876543210',
-        text: 'Your fee is due in two days.',
-      })
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const [url, init] = mockFetch.mock.calls[0]
+      expect(url).toBe('https://graph.facebook.com/v26.0/1000987654321/messages')
+      expect(init.method).toBe('POST')
+      expect(init.headers.Authorization).toBe('Bearer EAAG_test_access_token_mock_secret')
+      expect(init.headers['Content-Type']).toBe('application/json')
+
+      const body = JSON.parse(init.body)
+      expect(body.messaging_product).toBe('whatsapp')
+      expect(body.recipient_type).toBe('individual')
+      expect(body.to).toBe('919876543210')
+      expect(body.type).toBe('template')
+      expect(body.template.name).toBe('reborn_fee_due_reminder')
+      expect(body.template.language.code).toBe('en_US')
+      expect(body.template.components[0].parameters[0].text).toBe('Rahul')
     })
 
-    it('handles Evolution API error responses gracefully without exposing secrets', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'secret_key_never_leak',
-        instanceName: 'reborn-fitness',
+    it('sends text messages to Meta Graph API endpoint where permitted', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          messaging_product: 'whatsapp',
+          messages: [{ id: 'wamid.text123456' }],
+        }),
       })
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            error: 'Instance not connected to WhatsApp',
-            status: 400,
-          }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
+      vi.stubGlobal('fetch', mockFetch)
 
       const result = await provider.sendTextMessage({
         to: '919876543210',
-        text: 'Test reminder',
+        text: 'Hello from REBORN FITNESS',
       })
 
-      expect(result.success).toBe(false)
-      expect(result.status).toBe('failed')
-      expect(result.error).toContain('Instance not connected')
-      expect(result.error).not.toContain('secret_key_never_leak')
+      expect(result.success).toBe(true)
+      expect(result.messageId).toBe('wamid.text123456')
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.type).toBe('text')
+      expect(body.text.body).toBe('Hello from REBORN FITNESS')
     })
 
-    it('handles network errors and timeouts safely', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test_key',
-        instanceName: 'reborn-fitness',
-        requestTimeoutMs: 50,
+    it('sends media messages with image URL to Meta Graph API endpoint', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          messaging_product: 'whatsapp',
+          messages: [{ id: 'wamid.media987654' }],
+        }),
       })
-
-      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('ECONNREFUSED'))
-
-      const result = await provider.sendTextMessage({
-        to: '919876543210',
-        text: 'Test message',
-      })
-
-      expect(result.success).toBe(false)
-      expect(result.status).toBe('failed')
-      expect(result.error).toContain('ECONNREFUSED')
-    })
-
-    it('sends media messages with image and caption to Evolution endpoint', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test-api-key',
-        instanceName: 'reborn-fitness',
-      })
-
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            key: { id: 'evo_media_456' },
-            status: 'PENDING',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
+      vi.stubGlobal('fetch', mockFetch)
 
       const result = await provider.sendMediaMessage({
         to: '919876543210',
         type: 'image',
-        mediaUrl: 'https://images.example.com/promo.jpg',
-        caption: 'Diwali Special Offer!',
+        mediaUrl: 'https://example.com/banner.jpg',
+        caption: 'Special Festival Offer',
       })
 
       expect(result.success).toBe(true)
-      expect(result.messageId).toBe('evo_media_456')
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'http://localhost:8080/message/sendMedia/reborn-fitness',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({
-            number: '919876543210',
-            mediatype: 'image',
-            media: 'https://images.example.com/promo.jpg',
-            caption: 'Diwali Special Offer!',
-          }),
+      expect(result.messageId).toBe('wamid.media987654')
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.type).toBe('image')
+      expect(body.image.link).toBe('https://example.com/banner.jpg')
+      expect(body.image.caption).toBe('Special Festival Offer')
+    })
+
+    it('handles Meta API authentication errors (401 / code 190) gracefully without leaking secrets', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: {
+            message: 'Invalid OAuth access token.',
+            type: 'OAuthException',
+            code: 190,
+            fbtrace_id: 'AZy12345678',
+          },
         }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const result = await provider.sendTextMessage({
+        to: '919876543210',
+        text: 'Test',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.httpStatus).toBe(401)
+      expect(result.error).toContain('Meta API authentication failed')
+      expect(result.error).not.toContain('EAAG_test_access_token_mock_secret')
+      expect(result.fbtraceId).toBe('AZy12345678')
+    })
+
+    it('handles Meta rate limit errors (429 / code 130429) cleanly', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error: {
+            message: 'Rate limit hit',
+            code: 130429,
+            error_data: { details: 'Too many messages sent per second' },
+          },
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const result = await provider.sendTemplateMessage({
+        to: '919876543210',
+        templateName: 'test_template',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.httpStatus).toBe(429)
+      expect(result.error).toContain('rate limit')
+    })
+
+    it('handles network timeouts and abort errors safely', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const abortErr = new Error('The operation was aborted')
+      abortErr.name = 'AbortError'
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortErr))
+
+      await expect(
+        provider.sendTextMessage({
+          to: '919876543210',
+          text: 'Timeout test',
+        }),
+      ).rejects.toThrow(/timed out/)
+    })
+
+    it('checks phone registration & quality rating via GET phone details endpoint', async () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: '1000987654321',
+          verified_name: 'REBORN FITNESS',
+          display_phone_number: '+91 98765 43210',
+          quality_rating: 'GREEN',
+        }),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const status = await provider.getConnectionStatus()
+      expect(status.state).toBe('connected')
+      expect(status.verifiedName).toBe('REBORN FITNESS')
+      expect(status.qualityRating).toBe('GREEN')
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v26.0/1000987654321?fields=verified_name,display_phone_number,quality_rating,code_verification_status',
+        expect.anything(),
       )
     })
 
-    it('resolves local uploads to base64 Data URIs and guards against path traversal', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test_key',
-        instanceName: 'reborn-fitness',
-      })
+    it('verifies webhook HMAC-SHA256 signature with constant-time security', () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      const payload = JSON.stringify({ object: 'whatsapp_business_account', entry: [] })
 
-      // Create a temporary test image in public/uploads/whatsapp
-      const uploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'whatsapp')
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-      const testFile = path.join(uploadDir, 'test_sample.png')
-      fs.writeFileSync(testFile, Buffer.from('fake-png-data'))
+      const hmac = crypto.createHmac('sha256', config.appSecret)
+      hmac.update(Buffer.from(payload, 'utf-8'))
+      const validSignature = `sha256=${hmac.digest('hex')}`
+
+      expect(provider.verifyWebhookSignature(payload, validSignature)).toBe(true)
+      expect(provider.verifyWebhookSignature(payload, 'sha256=invalid_hex_string_12345')).toBe(
+        false,
+      )
+      expect(provider.verifyWebhookSignature(payload, undefined)).toBe(false)
+    })
+
+    it('verifies GET verification handshake token securely', () => {
+      const provider = new MetaCloudWhatsAppProvider(config)
+      expect(provider.verifyWebhookToken('subscribe', config.webhookVerifyToken)).toBe(true)
+      expect(provider.verifyWebhookToken('subscribe', 'wrong_token')).toBe(false)
+      expect(provider.verifyWebhookToken('unsubscribe', config.webhookVerifyToken)).toBe(false)
+    })
+  })
+
+  describe('Meta Webhook Verification Handshake (GET)', () => {
+    it('returns challenge string with HTTP 200 on valid verify token', async () => {
+      const verifyToken = env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'test-verify-token-123'
+      const prev = env.WHATSAPP_WEBHOOK_VERIFY_TOKEN
+      env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = verifyToken
 
       try {
-        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-          new Response(JSON.stringify({ key: { id: 'evo_media_789' } }), { status: 200 }),
-        )
+        const res = await request(app)
+          .get('/api/whatsapp/webhook')
+          .query({
+            'hub.mode': 'subscribe',
+            'hub.verify_token': verifyToken,
+            'hub.challenge': 'CHALLENGE_STRING_META_12345',
+          })
+          .expect(200)
 
-        const result = await provider.sendMediaMessage({
-          to: '919876543210',
-          type: 'image',
-          mediaUrl: '/uploads/whatsapp/test_sample.png',
-          caption: 'Sample photo',
-        })
-
-        expect(result.success).toBe(true)
-        const calledBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)
-        expect(calledBody.media).toContain('data:image/png;base64,')
-
-        // Test directory traversal prevention
-        const traversalResult = await provider.sendMediaMessage({
-          to: '919876543210',
-          type: 'image',
-          mediaUrl: '/uploads/whatsapp/../../../../etc/passwd',
-          caption: 'Exploit attempt',
-        })
-        expect(traversalResult.success).toBe(false)
-        expect(traversalResult.error).toContain('Media attachment could not be read')
+        expect(res.text).toBe('CHALLENGE_STRING_META_12345')
       } finally {
-        if (fs.existsSync(testFile)) fs.unlinkSync(testFile)
+        env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = prev
       }
     })
 
-    it('checks instance connection state accurately (connected, disconnected, unreachable)', async () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test_key',
-        instanceName: 'reborn-fitness',
-      })
+    it('rejects GET verification with 403 on invalid or missing verify token', async () => {
+      await request(app)
+        .get('/api/whatsapp/webhook')
+        .query({
+          'hub.mode': 'subscribe',
+          'hub.verify_token': 'wrong-token',
+          'hub.challenge': 'CHALLENGE_STRING',
+        })
+        .expect(403)
 
-      // 1. Connected ('open')
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ instance: { state: 'open' } }), { status: 200 }),
-      )
-      const res1 = await provider.getConnectionStatus()
-      expect(res1.state).toBe('connected')
+      await request(app)
+        .get('/api/whatsapp/webhook')
+        .query({
+          'hub.mode': 'subscribe',
+          'hub.challenge': 'CHALLENGE_STRING',
+        })
+        .expect(403)
+    })
+  })
 
-      // 2. Disconnected ('close')
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ instance: { state: 'close' } }), { status: 200 }),
-      )
-      const res2 = await provider.getConnectionStatus()
-      expect(res2.state).toBe('disconnected')
+  describe('Meta Webhook Ingest & Status Hierarchy (POST)', () => {
+    const rawSecret = env.WHATSAPP_APP_SECRET || 'secret-test-key-321'
 
-      // 3. 401 Unauthorized -> unreachable
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
-      )
-      const res3 = await provider.getConnectionStatus()
-      expect(res3.state).toBe('unreachable')
-
-      // 4. Fetch throws network error
-      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network offline'))
-      const res4 = await provider.getConnectionStatus()
-      expect(res4.state).toBe('unreachable')
+    beforeEach(() => {
+      env.WHATSAPP_APP_SECRET = rawSecret
     })
 
-    it('verifies webhook shared secrets with constant-time equality', () => {
-      const provider = new EvolutionWhatsAppProvider({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test_key',
-        instanceName: 'reborn-fitness',
-        webhookSecret: 'super-secure-shared-secret-12345',
+    function signBody(body: object): string {
+      const hmac = crypto.createHmac('sha256', rawSecret)
+      hmac.update(JSON.stringify(body))
+      return `sha256=${hmac.digest('hex')}`
+    }
+
+    it('rejects invalid X-Hub-Signature-256 with 401 Unauthorized', async () => {
+      const payload = { object: 'whatsapp_business_account', entry: [] }
+
+      await request(app)
+        .post('/api/whatsapp/webhook')
+        .set('x-hub-signature-256', 'sha256=bad_hex_signature_00000000000000000000000000000000')
+        .send(payload)
+        .expect(401)
+    })
+
+    it('updates notification status upon receiving Meta delivery events (sent, delivered, read, failed)', async () => {
+      const member = await createTestMember({
+        fullName: 'Anita Roy',
+        phone: '9876543210',
       })
 
-      expect(provider.verifyWebhookSecret('super-secure-shared-secret-12345')).toBe(true)
-      expect(provider.verifyWebhookSecret('wrong-secret')).toBe(false)
-      expect(provider.verifyWebhookSecret('')).toBe(false)
-      expect(provider.verifyWebhookSecret(undefined)).toBe(false)
+      const messageId = 'wamid.HBgLAnitaRoy123'
+      const notification = await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876543210',
+        type: 'FEE_DUE_2_DAYS',
+        messageId,
+        status: 'queued',
+        provider: 'cloud_api',
+      })
+
+      const payload = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: '123456789',
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { display_phone_number: '919876543210', phone_number_id: '1001' },
+                  statuses: [
+                    {
+                      id: messageId,
+                      status: 'delivered',
+                      timestamp: '1729700000',
+                      recipient_id: '919876543210',
+                    },
+                  ],
+                },
+                field: 'messages',
+              },
+            ],
+          },
+        ],
+      }
+
+      const sig = signBody(payload)
+      const res = await request(app)
+        .post('/api/whatsapp/webhook')
+        .set('x-hub-signature-256', sig)
+        .send(payload)
+        .expect(200)
+
+      expect(res.body.status).toBe('ok')
+      expect(res.body.processed).toBe(1)
+
+      const updated = await WhatsAppNotification.findById(notification._id)
+      expect(updated?.status).toBe('delivered')
+      expect(updated?.deliveredAt).not.toBeNull()
+    })
+
+    it('protects status hierarchy against out-of-order events (read > delivered > sent)', async () => {
+      const member = await createTestMember({
+        fullName: 'Karan Mehra',
+        phone: '9876543211',
+      })
+
+      const messageId = 'wamid.HBgLKaranRead123'
+      const notification = await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876543211',
+        type: 'FEE_DUE_2_DAYS',
+        messageId,
+        status: 'read',
+        readAt: new Date(),
+        provider: 'cloud_api',
+      })
+
+      // Attempt out-of-order delivered event
+      const payload = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: '123456789',
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { display_phone_number: '919876543211', phone_number_id: '1001' },
+                  statuses: [
+                    {
+                      id: messageId,
+                      status: 'delivered',
+                      timestamp: '1729700000',
+                      recipient_id: '919876543211',
+                    },
+                  ],
+                },
+                field: 'messages',
+              },
+            ],
+          },
+        ],
+      }
+
+      await request(app)
+        .post('/api/whatsapp/webhook')
+        .set('x-hub-signature-256', signBody(payload))
+        .send(payload)
+        .expect(200)
+
+      const rechecked = await WhatsAppNotification.findById(notification._id)
+      expect(rechecked?.status).toBe('read') // Did not downgrade to delivered
+    })
+
+    it('processes inbound opt-out message (STOP) and sets whatsappMarketingOptIn = false', async () => {
+      const member = await createTestMember({
+        fullName: 'Opt Out Member',
+        phone: '9876543212',
+        whatsappMarketingOptIn: true,
+      })
+
+      const inboundPayload = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: '123456789',
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { display_phone_number: '919876543212', phone_number_id: '1001' },
+                  messages: [
+                    {
+                      from: '919876543212',
+                      id: 'wamid.inbound_stop_123',
+                      timestamp: '1729700000',
+                      type: 'text',
+                      text: { body: 'STOP' },
+                    },
+                  ],
+                },
+                field: 'messages',
+              },
+            ],
+          },
+        ],
+      }
+
+      await request(app)
+        .post('/api/whatsapp/webhook')
+        .set('x-hub-signature-256', signBody(inboundPayload))
+        .send(inboundPayload)
+        .expect(200)
+
+      const updated = await Member.findById(member._id)
+      expect(updated?.whatsappMarketingOptIn).toBe(false)
     })
   })
 
   describe('Upcoming Fee Due in 2 Days Reminders', () => {
     it('identifies members due in exactly 2 days, ignoring tomorrow or 3 days later', async () => {
-      const now = new Date()
-      const day2Date = new Date(`${istDay(2)}T00:00:00+05:30`)
-      const day1Date = new Date(`${istDay(1)}T00:00:00+05:30`)
-      const day3Date = new Date(`${istDay(3)}T00:00:00+05:30`)
+      const now = new Date('2026-10-23T10:00:00.000Z')
 
-      // Member 1: due in 2 days
-      const m1 = await Member.create({
-        memberId: 'RBF-0001',
-        fullName: 'Rahul Sharma',
-        phone: '9876543210',
-        planId: 'monthly',
-        planName: 'Monthly Fitness',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
+      const m2Days = await createTestMember({
+        fullName: 'Member Two Days',
+        phone: '9876500002',
+        joiningDate: new Date('2026-09-25'),
       })
-      await MonthlyPayment.create({
-        member: m1._id,
-        memberId: m1.memberId,
-        invoiceNumber: 'INV-TEST-0001',
-        billingMonth: '2026-10',
-        dueDate: day2Date,
+      await createTestPayment(m2Days, {
+        dueDate: new Date('2026-10-25T00:00:00.000Z'),
+        periodStart: new Date('2026-10-25'),
+        periodEnd: new Date('2026-11-24'),
         dueAmountPaise: 150000,
         amountPaidPaise: 0,
         status: 'unpaid',
       })
 
-      // Member 2: due tomorrow (1 day)
-      const m2 = await Member.create({
-        memberId: 'RBF-0002',
-        fullName: 'Aman Verma',
-        phone: '9876543211',
-        planId: 'monthly',
-        planName: 'Monthly Fitness',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
+      const mTomorrow = await createTestMember({
+        fullName: 'Member Tomorrow',
+        phone: '9876500001',
+        joiningDate: new Date('2026-09-24'),
       })
-      await MonthlyPayment.create({
-        member: m2._id,
-        memberId: m2.memberId,
-        invoiceNumber: 'INV-TEST-0002',
-        billingMonth: '2026-10',
-        dueDate: day1Date,
-        dueAmountPaise: 150000,
-        amountPaidPaise: 0,
-        status: 'unpaid',
-      })
-
-      // Member 3: due in 3 days
-      const m3 = await Member.create({
-        memberId: 'RBF-0003',
-        fullName: 'Priya Singh',
-        phone: '9876543212',
-        planId: 'monthly',
-        planName: 'Monthly Fitness',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      await MonthlyPayment.create({
-        member: m3._id,
-        memberId: m3.memberId,
-        invoiceNumber: 'INV-TEST-0003',
-        billingMonth: '2026-10',
-        dueDate: day3Date,
+      await createTestPayment(mTomorrow, {
+        dueDate: new Date('2026-10-24T00:00:00.000Z'),
+        periodStart: new Date('2026-10-24'),
+        periodEnd: new Date('2026-11-23'),
         dueAmountPaise: 150000,
         amountPaidPaise: 0,
         status: 'unpaid',
@@ -459,1191 +749,200 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
 
       const upcoming = await whatsAppService.getUpcomingFeeDueMembers(now)
       expect(upcoming).toHaveLength(1)
-      expect(upcoming[0].member.memberId).toBe('RBF-0001')
+      expect(upcoming[0].member.memberId).toBe(m2Days.memberId)
       expect(upcoming[0].daysLeft).toBe(2)
     })
 
     it('enforces deduplication so re-running the job never sends duplicate reminders', async () => {
-      const now = new Date()
-      const day2Date = new Date(`${istDay(2)}T00:00:00+05:30`)
-
-      const member = await Member.create({
-        memberId: 'RBF-0004',
-        fullName: 'Suresh Kumar',
-        phone: '9876543213',
-        planId: 'monthly',
-        planName: 'Monthly Fitness',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
+      const now = new Date('2026-10-23T10:00:00.000Z')
+      const member = await createTestMember({
+        fullName: 'Dedup Member',
+        phone: '9876500010',
+        joiningDate: new Date('2026-09-25'),
       })
-      const payment = await MonthlyPayment.create({
-        member: member._id,
-        memberId: member.memberId,
-        invoiceNumber: 'INV-TEST-0004',
-        billingMonth: '2026-10',
-        dueDate: day2Date,
+      const payment = await createTestPayment(member, {
+        dueDate: new Date('2026-10-25T00:00:00.000Z'),
+        periodStart: new Date('2026-10-25'),
+        periodEnd: new Date('2026-11-24'),
         dueAmountPaise: 150000,
         amountPaidPaise: 0,
         status: 'unpaid',
       })
 
-      // First run sends message
-      const res1 = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
-      expect(res1?.status).toBe('sent')
+      const firstResult = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
+      expect(firstResult?.status).toBe('sent')
       expect(mockProvider.sentMessages).toHaveLength(1)
 
-      // Second run detects existing dedupKey and returns existing record without sending again
-      const res2 = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
-      expect(res2?._id.toString()).toBe(res1?._id.toString())
-      expect(mockProvider.sentMessages).toHaveLength(1)
+      const secondResult = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
+      expect(secondResult?._id.toString()).toBe(firstResult?._id.toString())
+      expect(mockProvider.sentMessages).toHaveLength(1) // Still 1, no duplicate
     })
   })
 
   describe('Overdue Fee Reminders', () => {
     it('identifies overdue members and excludes fully paid members', async () => {
-      const now = new Date()
-      const overdueDate = new Date(`${istDay(-3)}T00:00:00+05:30`)
+      const now = new Date('2026-10-23T10:00:00.000Z')
 
-      // Unpaid overdue member
-      const m1 = await Member.create({
-        memberId: 'RBF-0005',
-        fullName: 'Overdue Member',
-        phone: '9876543214',
-        planId: 'monthly',
-        planName: 'Monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
+      const mUnpaid = await createTestMember({
+        fullName: 'Overdue Unpaid',
+        phone: '9876500021',
+        joiningDate: new Date('2026-09-20'),
       })
-      await MonthlyPayment.create({
-        member: m1._id,
-        memberId: m1.memberId,
-        invoiceNumber: 'INV-TEST-0005',
-        billingMonth: '2026-09',
-        dueDate: overdueDate,
-        dueAmountPaise: 100000,
-        amountPaidPaise: 0,
-        status: 'unpaid',
-      })
-
-      // Paid member with past due date
-      const m2 = await Member.create({
-        memberId: 'RBF-0006',
-        fullName: 'Paid Member',
-        phone: '9876543215',
-        planId: 'monthly',
-        planName: 'Monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      await MonthlyPayment.create({
-        member: m2._id,
-        memberId: m2.memberId,
-        invoiceNumber: 'INV-TEST-0006',
-        billingMonth: '2026-09',
-        dueDate: overdueDate,
-        dueAmountPaise: 100000,
-        amountPaidPaise: 100000,
-        status: 'paid',
-      })
-
-      const overdue = await whatsAppService.getOverdueMembers(now)
-      expect(overdue).toHaveLength(1)
-      expect(overdue[0].member.memberId).toBe('RBF-0005')
-      expect(overdue[0].daysOverdue).toBe(3)
-    })
-
-    it('sends daily overdue reminder deduplicated per day, allowing next day and stopping when paid', async () => {
-      const today = new Date('2026-10-22T10:00:00+05:30')
-      const tomorrow = new Date('2026-10-23T10:00:00+05:30')
-      const overdueDate = new Date('2026-10-18T00:00:00+05:30')
-
-      const member = await Member.create({
-        memberId: 'RBF-0007',
-        fullName: 'Daily Overdue Member',
-        phone: '9876543216',
-        planId: 'monthly',
-        planName: 'Monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      const payment = await MonthlyPayment.create({
-        member: member._id,
-        memberId: member.memberId,
-        invoiceNumber: 'INV-TEST-0007',
-        billingMonth: '2026-09',
-        dueDate: overdueDate,
-        dueAmountPaise: 100000,
-        amountPaidPaise: 0,
-        status: 'unpaid',
-      })
-
-      // Run on Oct 22
-      await whatsAppService.sendOverdueReminder(member, payment, today)
-      expect(mockProvider.sentMessages).toHaveLength(1)
-
-      // Re-run on Oct 22 (deduplicated)
-      await whatsAppService.sendOverdueReminder(member, payment, today)
-      expect(mockProvider.sentMessages).toHaveLength(1)
-
-      // Run on Oct 23 (allowed)
-      await whatsAppService.sendOverdueReminder(member, payment, tomorrow)
-      expect(mockProvider.sentMessages).toHaveLength(2)
-
-      // If member pays, further reminders stop
-      payment.amountPaidPaise = 100000
-      payment.status = 'paid'
-      await payment.save()
-
-      const dayAfter = new Date('2026-10-24T10:00:00+05:30')
-      const stopped = await whatsAppService.sendOverdueReminder(member, payment, dayAfter)
-      expect(stopped).toBeNull()
-      expect(mockProvider.sentMessages).toHaveLength(2)
-    })
-  })
-
-  describe('Evolution Webhook Endpoint & Status Mapping', () => {
-    it('verifies GET webhook endpoint connectivity', async () => {
-      const res = await request(app).get('/api/whatsapp/evolution-webhook').expect(200)
-      expect(res.body.status).toBe('ok')
-    })
-
-    it('enforces shared-secret validation when configured and rejects invalid secrets', async () => {
-      const oldSecret = process.env.EVOLUTION_WEBHOOK_SECRET
-      process.env.EVOLUTION_WEBHOOK_SECRET = 'secret_webhook_token_999'
-
-      // Missing or wrong secret -> 401
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .send({ event: 'CONNECTION_UPDATE', data: { state: 'open' } })
-        .expect(401)
-
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .set('x-webhook-secret', 'wrong_token')
-        .send({ event: 'CONNECTION_UPDATE', data: { state: 'open' } })
-        .expect(401)
-
-      // Correct secret in header -> 200
-      const validRes = await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .set('x-webhook-secret', 'secret_webhook_token_999')
-        .send({ event: 'CONNECTION_UPDATE', data: { state: 'open' } })
-        .expect(200)
-
-      expect(validRes.body.status).toBe('ok')
-      if (oldSecret) {
-        process.env.EVOLUTION_WEBHOOK_SECRET = oldSecret
-      } else {
-        delete process.env.EVOLUTION_WEBHOOK_SECRET
-      }
-    })
-
-    it('updates notification status upon receiving Evolution webhook events (sent, delivered, read, failed)', async () => {
-      const member = await Member.create({
-        memberId: 'RBF-0008',
-        fullName: 'Webhook Test Member',
-        phone: '9876543217',
-        planId: 'monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-
-      const notif = await WhatsAppNotification.create({
-        member: member._id,
-        memberId: member.memberId,
-        phoneNumber: '919876543217',
-        type: 'CUSTOM',
-        messageId: 'evo_msg_key_101',
-        status: 'sent',
-      })
-
-      // 1. Evolution DELIVERY_ACK event
-      const payloadDelivered = {
-        event: 'messages.update',
-        instance: 'reborn-fitness',
-        data: [
-          {
-            key: { id: 'evo_msg_key_101', remoteJid: '919876543217@s.whatsapp.net' },
-            update: { status: 'DELIVERY_ACK' },
-            messageTimestamp: 1729584000,
-          },
-        ],
-      }
-
-      await request(app).post('/api/whatsapp/evolution-webhook').send(payloadDelivered).expect(200)
-
-      const updatedDelivered = await WhatsAppNotification.findById(notif._id)
-      expect(updatedDelivered?.status).toBe('delivered')
-      expect(updatedDelivered?.deliveredAt).not.toBeNull()
-
-      // 2. Evolution READ event
-      const payloadRead = {
-        event: 'MESSAGES_UPDATE',
-        instance: 'reborn-fitness',
-        data: {
-          keyId: 'evo_msg_key_101',
-          status: 'READ',
-          messageTimestamp: 1729584100,
-        },
-      }
-
-      await request(app).post('/api/whatsapp/evolution-webhook').send(payloadRead).expect(200)
-
-      const updatedRead = await WhatsAppNotification.findById(notif._id)
-      expect(updatedRead?.status).toBe('read')
-      expect(updatedRead?.readAt).not.toBeNull()
-    })
-
-    it('protects status hierarchy against out-of-order events and prevents campaign stat double-counting', async () => {
-      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
-
-      const member = await Member.create({
-        memberId: 'RBF-0009',
-        fullName: 'Hierarchy Member',
-        phone: '9876543219',
-        planId: 'monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-
-      const campaign = await WhatsAppCampaign.create({
-        name: 'Hierarchy Test Campaign',
-        message: 'Important message',
-        recipientFilter: 'all',
-        recipientCount: 1,
-        stats: { sent: 1, delivered: 0, read: 0, failed: 0 },
-        status: 'completed',
-        createdBy: member._id,
-      })
-
-      const notif = await WhatsAppNotification.create({
-        member: member._id,
-        memberId: member.memberId,
-        phoneNumber: '919876543219',
-        type: 'CUSTOM',
-        campaign: campaign._id,
-        messageId: 'evo_hierarchy_msg_1',
-        status: 'sent',
-      })
-
-      // 1. Deliver message
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .send({
-          event: 'messages.update',
-          data: [{ key: { id: 'evo_hierarchy_msg_1' }, update: { status: 'DELIVERY_ACK' } }],
-        })
-        .expect(200)
-
-      let c = await WhatsAppCampaign.findById(campaign._id)
-      expect(c?.stats.delivered).toBe(1)
-
-      // 2. Duplicate DELIVERED event (should NOT increment campaign stats again)
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .send({
-          event: 'messages.update',
-          data: [{ key: { id: 'evo_hierarchy_msg_1' }, update: { status: 'DELIVERY_ACK' } }],
-        })
-        .expect(200)
-
-      c = await WhatsAppCampaign.findById(campaign._id)
-      expect(c?.stats.delivered).toBe(1) // Still 1!
-
-      // 3. Mark READ
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .send({
-          event: 'messages.update',
-          data: [{ key: { id: 'evo_hierarchy_msg_1' }, update: { status: 'READ' } }],
-        })
-        .expect(200)
-
-      c = await WhatsAppCampaign.findById(campaign._id)
-      expect(c?.stats.read).toBe(1)
-
-      // 4. Delayed out-of-order SENT or DELIVERED event must NOT downgrade READ status
-      await request(app)
-        .post('/api/whatsapp/evolution-webhook')
-        .send({
-          event: 'send.message',
-          data: [{ key: { id: 'evo_hierarchy_msg_1' }, status: 'SERVER_ACK' }],
-        })
-        .expect(200)
-
-      const finalNotif = await WhatsAppNotification.findById(notif._id)
-      expect(finalNotif?.status).toBe('read') // Kept as 'read'
-    })
-  })
-
-  describe('Admin Endpoints & Custom Broadcasts', () => {
-    it('provides status, lists upcoming and overdue, and executes custom campaign', async () => {
-      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
-
-      // 1. WhatsApp status reports provider information
-      const statusRes = await agent.get('/api/admin/whatsapp/status').expect(200)
-      expect(statusRes.body).toHaveProperty('provider')
-      expect(statusRes.body.provider).toBeDefined()
-      expect(statusRes.body).toHaveProperty('instanceName')
-      expect(statusRes.body).toHaveProperty('connectionState')
-
-      // Create test members
-      await Member.create({
-        memberId: 'RBF-0010',
-        fullName: 'Broadcast Recipient 1',
-        phone: '9876543218',
-        planId: 'monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      await Member.create({
-        memberId: 'RBF-0011',
-        fullName: 'Broadcast Recipient 2',
-        phone: '9876543219',
-        planId: 'monthly',
-        monthlyFeePaise: 100000,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-
-      // 2. Preview campaign recipients
-      const previewRes = await agent
-        .post('/api/admin/whatsapp/campaigns/preview')
-        .set('x-csrf-token', csrf)
-        .send({ recipientFilter: 'active' })
-        .expect(200)
-
-      expect(previewRes.body.recipientCount).toBe(2)
-
-      // 3. Send campaign
-      const sendRes = await agent
-        .post('/api/admin/whatsapp/campaigns/send')
-        .set('x-csrf-token', csrf)
-        .send({
-          name: 'Gym Holiday Announcement',
-          message: 'The gym will remain closed on Diwali.',
-          recipientFilter: 'active',
-        })
-        .expect(200)
-
-      expect(sendRes.body.success).toBe(true)
-      expect(sendRes.body.campaign.recipientCount).toBe(2)
-
-      // 4. Check campaign list
-      const campaignsRes = await agent.get('/api/admin/whatsapp/campaigns').expect(200)
-      expect(campaignsRes.body.items).toHaveLength(1)
-      expect(campaignsRes.body.items[0].name).toBe('Gym Holiday Announcement')
-
-      // 5. Check history list
-      const historyRes = await agent.get('/api/admin/whatsapp/history').expect(200)
-      expect(historyRes.body.items.length).toBeGreaterThanOrEqual(2)
-    })
-  })
-
-  describe('Reminders with New Plans (15 Days - ₹500, Monthly - ₹1,500, Monthly - ₹2,000)', () => {
-    it('sends upcoming fee reminder for 15 Days – ₹500 with exact plan name and ₹500 fee', async () => {
-      const now = new Date()
-      const day2Date = new Date(`${istDay(2)}T00:00:00+05:30`)
-
-      const member = await Member.create({
-        memberId: 'RBF-0020',
-        fullName: 'Vikram 15-Day',
-        phone: '9876543220',
-        planId: '15days-500',
-        planName: '15 Days – ₹500',
-        monthlyFeePaise: 50000,
-        planDurationMonths: 0,
-        planDurationDays: 15,
-        joiningDate: new Date('2026-10-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      const payment = await MonthlyPayment.create({
-        member: member._id,
-        memberId: member.memberId,
-        invoiceNumber: 'INV-TEST-0020',
-        billingMonth: '2026-10',
-        planId: '15days-500',
-        planName: '15 Days – ₹500',
-        durationDays: 15,
-        dueDate: day2Date,
-        dueAmountPaise: 50000,
-        amountPaidPaise: 0,
-        status: 'unpaid',
-      })
-
-      const upcoming = await whatsAppService.getUpcomingFeeDueMembers(now)
-      const found = upcoming.find((u) => u.member.memberId === 'RBF-0020')
-      expect(found).toBeDefined()
-      expect(found?.payment.dueAmountPaise).toBe(50000)
-
-      const notif = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
-      expect(notif).not.toBeNull()
-      expect(notif?.message).toContain('₹500')
-      expect(notif?.message).toContain('15 Days – ₹500')
-    })
-
-    it('sends overdue reminder for Monthly – ₹2,000 and stops when balance is paid', async () => {
-      const now = new Date()
-      const overdueDate = new Date(`${istDay(-3)}T00:00:00+05:30`)
-
-      const member = await Member.create({
-        memberId: 'RBF-0021',
-        fullName: 'Anita 2000',
-        phone: '9876543221',
-        planId: 'monthly-2000',
-        planName: 'Monthly – ₹2,000',
-        monthlyFeePaise: 200000,
-        planDurationMonths: 1,
-        joiningDate: new Date('2026-08-01T00:00:00+05:30'),
-        status: 'active',
-      })
-      const payment = await MonthlyPayment.create({
-        member: member._id,
-        memberId: member.memberId,
-        invoiceNumber: 'INV-TEST-0021',
-        billingMonth: '2026-09',
-        planId: 'monthly-2000',
-        planName: 'Monthly – ₹2,000',
-        durationMonths: 1,
-        dueDate: overdueDate,
-        dueAmountPaise: 200000,
-        amountPaidPaise: 0,
-        status: 'unpaid',
-      })
-
-      // 1. Should be in overdue list
-      let overdue = await whatsAppService.getOverdueMembers(now)
-      let found = overdue.find((o) => o.member.memberId === 'RBF-0021')
-      expect(found).toBeDefined()
-      expect(found?.payment.dueAmountPaise).toBe(200000)
-
-      // 2. Send reminder
-      const notif = await whatsAppService.sendOverdueReminder(member, payment, now)
-      expect(notif).not.toBeNull()
-      expect(notif?.message).toContain('₹2,000')
-      expect(notif?.message).toContain('Monthly – ₹2,000')
-
-      // 3. Mark payment fully paid
-      payment.amountPaidPaise = 200000
-      payment.status = 'paid'
-      await payment.save()
-
-      // 4. Overdue check excludes paid bill
-      overdue = await whatsAppService.getOverdueMembers(now)
-      found = overdue.find((o) => o.member.memberId === 'RBF-0021')
-      expect(found).toBeUndefined()
-    })
-  })
-
-  describe('Provider Selection & Safe Defaults', () => {
-    it('uses mock mode by default without live credentials', () => {
-      const mock = new MockWhatsAppProvider(false)
-      expect(mock.isConfigured).toBe(false)
-      expect(env.whatsappProvider).toBeDefined()
-    })
-
-    it('reports unconfigured connection status when credentials are missing', async () => {
-      const incomplete = new WaportaWhatsAppProvider({
-        apiUrl: '',
-        apiKey: '',
-        sessionId: 'reborn-fitness',
-      })
-      expect(incomplete.isConfigured).toBe(false)
-      const status = await incomplete.getConnectionStatus()
-      expect(status.state).toBe('unconfigured')
-    })
-  })
-
-  describe('WaportaWhatsAppProvider Unit Tests', () => {
-    it('initializes properly and reports isConfigured correctly', () => {
-      const valid = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com/',
-        apiKey: 'waporta-secret-key-123',
-        sessionId: 'reborn-fitness',
-      })
-      expect(valid.isConfigured).toBe(true)
-      expect(valid.sessionId).toBe('reborn-fitness')
-
-      const invalid = new WaportaWhatsAppProvider({
-        apiUrl: '',
-        apiKey: '',
-        sessionId: 'reborn-fitness',
-      })
-      expect(invalid.isConfigured).toBe(false)
-    })
-
-    it('sends text messages with X-API-Key header to /api/whatsapp/send/text', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'super-secret-api-key',
-        sessionId: 'reborn-fitness',
-      })
-
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'sent',
-            messageId: '3EB0A1B2C3D4E5F6',
-            ack: 'socket',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
-
-      const result = await provider.sendTextMessage({
-        to: '+91 98765 43210',
-        text: 'Your gym membership fee is due in 2 days.',
-      })
-
-      // Prompt section 5: Initial socket acknowledgment only proves socket write,
-      // so it is recorded initially as 'queued' until stronger status arrives.
-      expect(result.success).toBe(true)
-      expect(result.messageId).toBe('3EB0A1B2C3D4E5F6')
-      expect(result.status).toBe('queued')
-
-      expect(fetchSpy).toHaveBeenCalledTimes(1)
-      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]
-      expect(calledUrl).toBe('https://waporta.example.com/api/whatsapp/send/text')
-      expect((calledInit?.headers as Record<string, string>)?.['X-API-Key']).toBe('super-secret-api-key')
-      expect((calledInit?.headers as Record<string, string>)?.['Content-Type']).toBe('application/json')
-
-      const body = JSON.parse(calledInit?.body as string)
-      expect(body).toEqual({
-        sessionId: 'reborn-fitness',
-        to: '919876543210',
-        text: 'Your gym membership fee is due in 2 days.',
-      })
-    })
-
-    it('handles image sending with base64 Data URI from local upload and blocks traversal', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'test-waporta-key',
-        sessionId: 'reborn-fitness',
-      })
-
-      const uploadDir = path.resolve(process.cwd(), 'public', 'uploads', 'whatsapp')
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-      const testFile = path.join(uploadDir, 'waporta_promo.jpg')
-      fs.writeFileSync(testFile, Buffer.from('fake-jpeg-data'))
-
-      try {
-        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              status: 'sent',
-              messageId: 'wamid_img_999',
-              ack: 'socket',
-            }),
-            { status: 200 },
-          ),
-        )
-
-        const result = await provider.sendMediaMessage({
-          to: '9876543210',
-          type: 'image',
-          mediaUrl: '/uploads/whatsapp/waporta_promo.jpg',
-          caption: 'Special Diwali Discount',
-        })
-
-        expect(result.success).toBe(true)
-        expect(result.messageId).toBe('wamid_img_999')
-        expect(result.status).toBe('queued')
-
-        const [calledUrl, calledInit] = fetchSpy.mock.calls[0]
-        expect(calledUrl).toBe('https://waporta.example.com/api/whatsapp/send/image')
-        const body = JSON.parse(calledInit?.body as string)
-        expect(body.sessionId).toBe('reborn-fitness')
-        expect(body.to).toBe('919876543210')
-        expect(body.text).toBe('Special Diwali Discount')
-        expect(body.media).toContain('data:image/jpeg;base64,')
-
-        // Test path traversal protection
-        const traversal = await provider.sendMediaMessage({
-          to: '9876543210',
-          type: 'image',
-          mediaUrl: '/uploads/whatsapp/../../../../windows/system32/drivers/etc/hosts',
-        })
-        expect(traversal.success).toBe(false)
-        expect(traversal.error).toContain('Media attachment could not be read')
-      } finally {
-        if (fs.existsSync(testFile)) fs.unlinkSync(testFile)
-      }
-    })
-
-    it('passes remote HTTPS media URLs through directly', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'test-key',
-        sessionId: 'reborn-fitness',
-      })
-
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ status: 'sent', messageId: 'wamid_remote_1' }),
-          { status: 200 },
-        ),
-      )
-
-      const result = await provider.sendMediaMessage({
-        to: '919876543210',
-        type: 'image',
-        mediaUrl: 'https://cdn.example.com/gym-flyer.png',
-        caption: 'Remote flyer',
-      })
-
-      expect(result.success).toBe(true)
-      const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)
-      expect(body.media).toBe('https://cdn.example.com/gym-flyer.png')
-    })
-
-    it('handles distinct error codes: 429, 422, 403, 503 and timeouts without leaking credentials', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'super_secret_credentials_do_not_leak',
-        sessionId: 'reborn-fitness',
-      })
-
-      // 1. 429 Rate limit
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Too many requests' }), { status: 429 }),
-      )
-      const res429 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
-      expect(res429.success).toBe(false)
-      expect(res429.httpStatus).toBe(429)
-      expect(res429.error).toContain('429')
-      expect(res429.error).not.toContain('super_secret_credentials_do_not_leak')
-
-      // 2. 422 Unregistered number
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Number not on WhatsApp' }), { status: 422 }),
-      )
-      const res422 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
-      expect(res422.success).toBe(false)
-      expect(res422.httpStatus).toBe(422)
-      expect(res422.error).toContain('422')
-
-      // 3. 403 Session banned / rejected
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Session revoked' }), { status: 403 }),
-      )
-      const res403 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
-      expect(res403.success).toBe(false)
-      expect(res403.httpStatus).toBe(403)
-      expect(res403.error).toContain('403')
-
-      // 4. 503 Session unavailable
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Gateway unavailable' }), { status: 503 }),
-      )
-      const res503 = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
-      expect(res503.success).toBe(false)
-      expect(res503.httpStatus).toBe(503)
-      expect(res503.error).toContain('503')
-
-      // 5. Network error
-      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Gateway connection reset'))
-      const resNet = await provider.sendTextMessage({ to: '9876543210', text: 'Hi' })
-      expect(resNet.success).toBe(false)
-      expect(resNet.error).toContain('Gateway connection reset')
-    })
-
-    it('maps Waporta session connectivity states accurately', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'test-key',
-        sessionId: 'reborn-fitness',
-      })
-
-      // connected
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'connected' }), { status: 200 }),
-      )
-      const s1 = await provider.getConnectionStatus()
-      expect(s1.state).toBe('connected')
-
-      // connecting -> maps to disconnected with details
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'connecting' }), { status: 200 }),
-      )
-      const s2 = await provider.getConnectionStatus()
-      expect(s2.state).toBe('disconnected')
-      expect(s2.details).toContain('connecting')
-
-      // disconnected
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'disconnected' }), { status: 200 }),
-      )
-      const s3 = await provider.getConnectionStatus()
-      expect(s3.state).toBe('disconnected')
-
-      // 404 session not found -> disconnected
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Not found' }), { status: 404 }),
-      )
-      const s4 = await provider.getConnectionStatus()
-      expect(s4.state).toBe('disconnected')
-      expect(s4.details).toContain('not found')
-
-      // 401 auth error -> unreachable
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401 }),
-      )
-      const s5 = await provider.getConnectionStatus()
-      expect(s5.state).toBe('unreachable')
-    })
-
-    it('queries message status held in Waporta memory cache', async () => {
-      const provider = new WaportaWhatsAppProvider({
-        apiUrl: 'https://waporta.example.com',
-        apiKey: 'test-key',
-        sessionId: 'reborn-fitness',
-      })
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ messageId: 'msg_100', status: 'delivered' }), { status: 200 }),
-      )
-      const diag = await provider.getMessageStatus('msg_100')
-      expect(diag).toEqual({ messageId: 'msg_100', status: 'delivered' })
-    })
-  })
-
-  describe('Waporta Webhook Endpoint & Status Mapping', () => {
-    it('provides connectivity health check at secret webhook path', async () => {
-      const res = await request(app).get(env.WAPORTA_WEBHOOK_PATH)
-      expect(res.status).toBe(200)
-      expect(res.body.service).toBe('waporta-webhook')
-    })
-
-    it('rejects mismatched session ID with HTTP 403', async () => {
-      const res = await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: 'other-session-unauthorized',
-          messageId: 'test_msg_id',
-          status: 'delivered',
-        })
-
-      expect(res.status).toBe(403)
-      expect(res.body.error).toContain('Mismatched session ID')
-    })
-
-    it('rejects malformed webhook request bodies with HTTP 400', async () => {
-      const res = await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .set('Content-Type', 'application/json')
-        .send('not-a-json-object')
-
-      expect(res.status).toBe(400)
-    })
-
-    it('safely ignores message.received events without error', async () => {
-      const res = await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.received',
-          sessionId: env.WAPORTA_SESSION_ID,
-          from: '919876543210',
-          text: 'Hello gym',
-        })
-
-      expect(res.status).toBe(200)
-      expect(res.body.processed).toBe(0)
-    })
-
-    it('maps Waporta status events (pending, server, delivered, read, error) and persists to MongoDB', async () => {
-      const member = await Member.create({
-        memberId: 'RBF-0091',
-        fullName: 'Waporta Member',
-        phone: '9876543210',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-
-      // 1. Create notification in queued state with external messageId
-      const notif = await WhatsAppNotification.create({
-        member: member._id,
-        memberId: member.memberId,
-        phoneNumber: '919876543210',
-        type: 'FEE_DUE_2_DAYS',
-        message: 'Upcoming fee reminder',
-        messageId: 'waporta_msg_888',
-        provider: 'waporta',
-        status: 'queued',
-      })
-
-      // 2. Webhook event: server acknowledgment (server -> sent)
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'waporta_msg_888',
-          status: 'server',
-          timestamp: Math.floor(Date.now() / 1000),
-        })
-
-      let updated = await WhatsAppNotification.findById(notif._id)
-      expect(updated?.status).toBe('sent')
-      expect(updated?.sentAt).toBeDefined()
-
-      // 3. Webhook event: delivered (delivered -> delivered)
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'waporta_msg_888',
-          status: 'delivered',
-          timestamp: Math.floor(Date.now() / 1000),
-        })
-
-      updated = await WhatsAppNotification.findById(notif._id)
-      expect(updated?.status).toBe('delivered')
-      expect(updated?.deliveredAt).toBeDefined()
-
-      // 4. Webhook event: read (read -> read)
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'waporta_msg_888',
-          status: 'read',
-          timestamp: Math.floor(Date.now() / 1000),
-        })
-
-      updated = await WhatsAppNotification.findById(notif._id)
-      expect(updated?.status).toBe('read')
-      expect(updated?.readAt).toBeDefined()
-    })
-
-    it('enforces status hierarchy: cannot downgrade higher statuses and protects campaign stats', async () => {
-      const member = await Member.create({
-        memberId: 'RBF-0092',
-        fullName: 'Hierarchy Test',
-        phone: '9876543211',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-
-      const campaign = await WhatsAppCampaign.create({
-        name: 'Hierarchy Promo',
-        message: 'Hello',
-        recipientFilter: 'all',
-        recipientCount: 1,
-        stats: { sent: 1, delivered: 0, read: 0, failed: 0 },
-        status: 'processing',
-        createdBy: member._id,
-      })
-
-      const notif = await WhatsAppNotification.create({
-        member: member._id,
-        memberId: member.memberId,
-        phoneNumber: '919876543211',
-        type: 'CUSTOM',
-        campaign: campaign._id,
-        message: 'Hello',
-        messageId: 'hierarchy_msg_1',
-        provider: 'waporta',
-        status: 'sent',
-      })
-
-      // Deliver message
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'hierarchy_msg_1',
-          status: 'delivered',
-        })
-
-      let cDoc = await WhatsAppCampaign.findById(campaign._id)
-      expect(cDoc?.stats.delivered).toBe(1)
-
-      // Out-of-order 'sent' event arriving late must NOT downgrade delivered back to sent
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'hierarchy_msg_1',
-          status: 'server',
-        })
-
-      let nDoc = await WhatsAppNotification.findById(notif._id)
-      expect(nDoc?.status).toBe('delivered')
-
-      // Delayed 'error' event must NOT overwrite a delivered message
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'hierarchy_msg_1',
-          status: 'error',
-          error: 'Transient error after delivery',
-        })
-
-      nDoc = await WhatsAppNotification.findById(notif._id)
-      expect(nDoc?.status).toBe('delivered')
-
-      // Duplicate 'delivered' event must NOT double-count campaign stats
-      await request(app)
-        .post(env.WAPORTA_WEBHOOK_PATH)
-        .send({
-          event: 'message.status',
-          sessionId: env.WAPORTA_SESSION_ID,
-          messageId: 'hierarchy_msg_1',
-          status: 'delivered',
-        })
-
-      cDoc = await WhatsAppCampaign.findById(campaign._id)
-      expect(cDoc?.stats.delivered).toBe(1)
-    })
-  })
-
-  describe('Campaign Rate Pacing & Session Error Guard', () => {
-    it('halts campaign immediately on 429 rate limit or 403 session ban and records failure cleanly', async () => {
-      const m1 = await Member.create({
-        memberId: 'RBF-0093',
-        fullName: 'Camp Member 1',
-        phone: '9876543201',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-      const m2 = await Member.create({
-        memberId: 'RBF-0094',
-        fullName: 'Camp Member 2',
-        phone: '9876543202',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-      const m3 = await Member.create({
-        memberId: 'RBF-0095',
-        fullName: 'Camp Member 3',
-        phone: '9876543203',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-
-      // Custom test provider that succeeds on m1, then fails with 429 on m2
-      let callCount = 0
-      const rateLimitedProvider: any = {
-        isConfigured: true,
-        sendTextMessage: vi.fn().mockImplementation(async (opts) => {
-          callCount++
-          if (callCount === 1) {
-            return { success: true, messageId: 'camp_msg_1', status: 'queued' }
-          }
-          return {
-            success: false,
-            error: 'Rate limit or quota exceeded (HTTP 429): Too many requests',
-            status: 'failed',
-            httpStatus: 429,
-          }
-        }),
-      }
-
-      whatsAppService.setProvider(rateLimitedProvider)
-
-      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
-      const res = await agent
-        .post('/api/admin/whatsapp/campaigns/send?wait=true')
-        .set('x-csrf-token', csrf)
-        .send({
-          name: 'Pacing Guard Test',
-          message: 'Campaign pacing test',
-          recipientFilter: 'all',
-        })
-
-      expect(res.status).toBe(200)
-
-      // Verify that provider was NOT called for m3 because 429 cleanly halted the queue!
-      expect(callCount).toBe(2)
-
-      const campaign = await WhatsAppCampaign.findOne({ name: 'Pacing Guard Test' })
-      expect(campaign).toBeDefined()
-      expect(campaign?.status).toBe('paused')
-      expect(campaign?.error).toContain('429')
-
-      // Verify all notifications exist and m3 was not dispatched
-      const notifs = await WhatsAppNotification.find({ campaign: campaign?._id }).sort({ createdAt: 1 })
-      expect(notifs.length).toBe(3)
-      expect(notifs[0].status).toBe('queued')
-      expect(notifs[1].status).toBe('paused')
-      expect(notifs[2].status).toBe('queued') // Retained cleanly for resumption
-    })
-  })
-
-  describe('Controlled Outbound Messaging & Shared Queue', () => {
-    it('cancels fee reminder dispatch if member pays fee before queue processes', async () => {
-      const now = new Date('2026-10-24T10:00:00+05:30')
-      const member = await Member.create({
-        memberId: 'RBF-0096',
-        fullName: 'Paid Member Check',
-        phone: '9876543296',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-
-      const payment = await MonthlyPayment.create({
-        member: member._id,
-        memberId: member.memberId,
-        invoiceNumber: 'INV-PAID-001',
-        billingMonth: '2026-10',
-        planId: 'monthly-1500',
-        planName: 'Monthly – ₹1,500',
-        dueDate: new Date('2026-10-26T00:00:00+05:30'), // 2 days in future
+      await createTestPayment(mUnpaid, {
+        dueDate: new Date('2026-10-20T00:00:00.000Z'),
+        periodStart: new Date('2026-10-20'),
+        periodEnd: new Date('2026-11-19'),
         dueAmountPaise: 150000,
         amountPaidPaise: 0,
         status: 'unpaid',
       })
 
-      // Pause rate limiter so notification is queued in database but not yet dispatched
-      outboundRateLimiter.pause('Test holding in queue')
+      const mPaid = await createTestMember({
+        fullName: 'Overdue But Paid',
+        phone: '9876500022',
+        joiningDate: new Date('2026-09-20'),
+      })
+      await createTestPayment(mPaid, {
+        dueDate: new Date('2026-10-20T00:00:00.000Z'),
+        periodStart: new Date('2026-10-20'),
+        periodEnd: new Date('2026-11-19'),
+        dueAmountPaise: 150000,
+        amountPaidPaise: 150000,
+        status: 'paid',
+      })
 
-      const queuedNotif = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
-      expect(queuedNotif).not.toBeNull()
-      expect(queuedNotif?.status).toBe('queued')
+      const overdueList = await whatsAppService.getOverdueMembers(now)
+      expect(overdueList).toHaveLength(1)
+      expect(overdueList[0].member.memberId).toBe(mUnpaid.memberId)
+      expect(overdueList[0].daysOverdue).toBe(3)
+    })
 
-      // Member now settles payment!
+    it('sends daily overdue reminder deduplicated per day and stops when paid', async () => {
+      const day1 = new Date('2026-10-23T10:00:00.000Z')
+      const day2 = new Date('2026-10-24T10:00:00.000Z')
+
+      const member = await createTestMember({
+        fullName: 'Daily Overdue Member',
+        phone: '9876500030',
+        joiningDate: new Date('2026-09-20'),
+      })
+      const payment = await createTestPayment(member, {
+        dueDate: new Date('2026-10-20T00:00:00.000Z'),
+        periodStart: new Date('2026-10-20'),
+        periodEnd: new Date('2026-11-19'),
+        dueAmountPaise: 150000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      // Send day 1
+      await whatsAppService.sendOverdueReminder(member, payment, day1)
+      expect(mockProvider.sentMessages).toHaveLength(1)
+
+      // Retrying day 1 deduplicates
+      await whatsAppService.sendOverdueReminder(member, payment, day1)
+      expect(mockProvider.sentMessages).toHaveLength(1)
+
+      // Send day 2
+      await whatsAppService.sendOverdueReminder(member, payment, day2)
+      expect(mockProvider.sentMessages).toHaveLength(2)
+
+      // Member pays
       payment.amountPaidPaise = 150000
       payment.status = 'paid'
       await payment.save()
 
-      // Resume queue and process pending
-      outboundRateLimiter.resume()
-      await outboundQueueService.dispatchPending()
+      // Reminder is stopped
+      const resultAfterPaid = await whatsAppService.sendOverdueReminder(
+        member,
+        payment,
+        new Date('2026-10-25T10:00:00.000Z'),
+      )
+      expect(resultAfterPaid).toBeNull()
+      expect(mockProvider.sentMessages).toHaveLength(2) // No new sends
+    })
+  })
 
-      // Verify that reminder was SKIPPED and NOT sent because member paid
-      const finalNotif = await WhatsAppNotification.findById(queuedNotif?._id)
-      expect(finalNotif?.status).toBe('not_sent')
-      expect(finalNotif?.error).toContain('Payment settled prior to dispatch')
+  describe('Controlled Outbound Messaging & Queue Safety', () => {
+    it('cancels fee reminder dispatch if member pays fee before queue processes', async () => {
+      const member = await createTestMember({
+        fullName: 'Payer Before Queue',
+        phone: '9876500040',
+        joiningDate: new Date('2026-09-25'),
+      })
+      const payment = await createTestPayment(member, {
+        dueDate: new Date('2026-10-25T00:00:00.000Z'),
+        periodStart: new Date('2026-10-25'),
+        periodEnd: new Date('2026-11-24'),
+        dueAmountPaise: 150000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      // Create notification manually in queued state
+      const notif = await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876500040',
+        type: 'FEE_DUE_2_DAYS',
+        payment: payment._id,
+        templateName: 'reborn_fee_due_reminder',
+        status: 'queued',
+        provider: 'cloud_api',
+      })
+
+      // Member settles fee before queue dispatches
+      payment.status = 'paid'
+      payment.amountPaidPaise = 150000
+      await payment.save()
+
+      const summary = await outboundQueueService.dispatchPending()
+      expect(summary.skippedPaid).toBe(1)
+      expect(mockProvider.sentMessages).toHaveLength(0)
+
+      const rechecked = await WhatsAppNotification.findById(notif._id)
+      expect(rechecked?.status).toBe('not_sent')
+      expect(rechecked?.error).toContain('Payment settled prior to dispatch')
     })
 
     it('enforces shared rolling-window limiter across concurrent dispatches', async () => {
-      outboundRateLimiter.reset()
       outboundRateLimiter.configure({
         maxPerWindow: 2,
         windowMs: 300,
-        batchSize: 5,
-        batchCooldownMs: 0,
-        messageDelayMs: 0,
       })
 
-      const sendTimes: number[] = []
-      const trackingProvider: any = {
-        isConfigured: true,
-        sendTextMessage: vi.fn().mockImplementation(async () => {
-          sendTimes.push(Date.now())
-          return { success: true, messageId: `msg_${Date.now()}`, status: 'sent' }
-        }),
-      }
-      whatsAppService.setProvider(trackingProvider)
+      await outboundRateLimiter.acquireSlot()
+      outboundRateLimiter.recordDispatch()
+      await outboundRateLimiter.acquireSlot()
+      outboundRateLimiter.recordDispatch()
 
-      const m1 = await Member.create({
-        memberId: 'RBF-0097',
-        fullName: 'Rate Member 1',
-        phone: '9876543297',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-      const m2 = await Member.create({
-        memberId: 'RBF-0098',
-        fullName: 'Rate Member 2',
-        phone: '9876543298',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
-      const m3 = await Member.create({
-        memberId: 'RBF-0099',
-        fullName: 'Rate Member 3',
-        phone: '9876543299',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
-      })
+      const start = Date.now()
+      await outboundRateLimiter.acquireSlot()
+      outboundRateLimiter.recordDispatch()
+      const elapsed = Date.now() - start
 
-      // Create 3 notifications
-      for (const m of [m1, m2, m3]) {
-        await WhatsAppNotification.create({
-          member: m._id,
-          memberId: m.memberId,
-          phoneNumber: '91' + m.phone,
-          type: 'CUSTOM',
-          message: 'Rate limit test',
-          provider: 'waporta',
-          status: 'queued',
-        })
-      }
-
-      await outboundQueueService.dispatchPending()
-
-      expect(trackingProvider.sendTextMessage).toHaveBeenCalledTimes(3)
-      // Check that 3rd dispatch waited for window expiration (at least 200ms)
-      expect(sendTimes.length).toBe(3)
-      const diff = sendTimes[2] - sendTimes[0]
-      expect(diff).toBeGreaterThanOrEqual(250)
+      expect(elapsed).toBeGreaterThanOrEqual(250)
     })
 
     it('treats ambiguous timeouts carefully and avoids auto-retrying to prevent duplicate messages', async () => {
-      outboundRateLimiter.reset()
-
-      const timeoutProvider: any = {
-        isConfigured: true,
-        sendTextMessage: vi.fn().mockImplementation(async () => {
-          const abortErr = new Error('The operation was aborted')
-          abortErr.name = 'AbortError'
-          throw abortErr
-        }),
-      }
-      whatsAppService.setProvider(timeoutProvider)
-
-      const m = await Member.create({
-        memberId: 'RBF-0100',
-        fullName: 'Timeout Member',
-        phone: '9876543100',
-        planId: 'monthly-1500',
-        monthlyFeePaise: 150000,
-        joiningDate: new Date('2026-09-01'),
-        status: 'active',
+      const member = await createTestMember({
+        fullName: 'Timeout Guard Member',
+        phone: '9876500050',
+        joiningDate: new Date('2026-09-25'),
       })
 
+      const timeoutErr = new Error('Graph API request timed out')
+      timeoutErr.name = 'AbortError'
+      vi.spyOn(mockProvider, 'sendTextMessage').mockRejectedValue(timeoutErr)
+
       const notif = await WhatsAppNotification.create({
-        member: m._id,
-        memberId: m.memberId,
-        phoneNumber: '91' + m.phone,
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876500050',
         type: 'CUSTOM',
-        message: 'Timeout test',
-        provider: 'waporta',
+        message: 'Timeout testing',
         status: 'queued',
+        provider: 'cloud_api',
       })
 
       await outboundQueueService.dispatchPending()
@@ -1651,35 +950,158 @@ describe('WhatsApp Notification Module (Evolution API)', () => {
       const updated = await WhatsAppNotification.findById(notif._id)
       expect(updated?.status).toBe('failed')
       expect(updated?.error).toContain('Ambiguous timeout')
-      // Ensure provider was called once and not blindly retried
-      expect(timeoutProvider.sendTextMessage).toHaveBeenCalledTimes(1)
+      expect(updated?.attempts).toBe(1) // Not retried
     })
 
-    it('reports full campaign progress and exposes queue status and pause/resume controls in admin API', async () => {
-      const { agent, csrf } = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
+    it('recovers stale items left in sending state from process restarts', async () => {
+      const member = await createTestMember({
+        fullName: 'Crash Recovery Member',
+        phone: '9876500060',
+        joiningDate: new Date('2026-09-25'),
+      })
 
-      // Check queue status endpoint
-      const qStatus = await agent.get('/api/admin/whatsapp/queue/status').expect(200)
-      expect(qStatus.body).toHaveProperty('counts')
-      expect(qStatus.body).toHaveProperty('rateLimiter')
+      await WhatsAppNotification.create({
+        member: member._id,
+        memberId: member.memberId,
+        phoneNumber: '919876500060',
+        type: 'CUSTOM',
+        message: 'Pre-crash message',
+        status: 'sending',
+        provider: 'cloud_api',
+      })
+
+      const recovered = await outboundQueueService.recoverStaleSendingItems()
+      expect(recovered).toBe(1)
+
+      const count = await WhatsAppNotification.countDocuments({ status: 'queued' })
+      expect(count).toBe(1)
+    })
+  })
+
+  describe('Reminders with New Plans (15 Days - ₹500, Monthly - ₹1,500, Monthly - ₹2,000)', () => {
+    it('sends upcoming fee reminder for 15 Days – ₹500 with exact plan name and ₹500 fee', async () => {
+      const now = new Date('2026-10-23T10:00:00.000Z')
+      const member = await createTestMember({
+        fullName: 'Aarav Gupta',
+        phone: '9876500070',
+        planId: '15days-500',
+        planName: '15 Days – ₹500',
+        joiningDate: new Date('2026-10-10'),
+        monthlyFeePaise: 50000,
+      })
+      const payment = await createTestPayment(member, {
+        planName: '15 Days – ₹500',
+        dueDate: new Date('2026-10-25T00:00:00.000Z'),
+        periodStart: new Date('2026-10-25'),
+        periodEnd: new Date('2026-11-08'),
+        dueAmountPaise: 50000,
+        amountPaidPaise: 0,
+        status: 'unpaid',
+      })
+
+      const reminder = await whatsAppService.sendUpcomingDueReminder(member, payment, now)
+      expect(reminder?.status).toBe('sent')
+      expect(reminder?.metadata?.amountDue).toBe('500')
+      expect(reminder?.metadata?.planName).toBe('15 Days – ₹500')
+    })
+
+    it('sends overdue reminder for Monthly – ₹2,000 and stops when balance is paid', async () => {
+      const now = new Date('2026-10-23T10:00:00.000Z')
+      const member = await createTestMember({
+        fullName: 'Vikram Joshi',
+        phone: '9876500080',
+        planId: 'monthly-2000',
+        planName: 'Monthly – ₹2,000',
+        joiningDate: new Date('2026-09-20'),
+        monthlyFeePaise: 200000,
+      })
+      const payment = await createTestPayment(member, {
+        planName: 'Monthly – ₹2,000',
+        dueDate: new Date('2026-10-20T00:00:00.000Z'),
+        periodStart: new Date('2026-10-20'),
+        periodEnd: new Date('2026-11-19'),
+        dueAmountPaise: 200000,
+        amountPaidPaise: 50000, // Partial payment
+        status: 'partial',
+      })
+
+      const reminder = await whatsAppService.sendOverdueReminder(member, payment, now)
+      expect(reminder?.status).toBe('sent')
+      expect(reminder?.metadata?.amountDue).toBe('1,500') // Balance due
+      expect(reminder?.metadata?.daysOverdue).toBe(3)
+    })
+  })
+
+  describe('Admin Endpoints & Custom Broadcasts', () => {
+    it('provides status and allows queue pause and resume controls in admin API', async () => {
+      const authed = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
+
+      const statusRes = await authed.agent.get('/api/admin/whatsapp/status').expect(200)
+      expect(statusRes.body).toHaveProperty('provider')
+      expect(statusRes.body).toHaveProperty('isConfigured')
+      expect(statusRes.body).toHaveProperty('webhookPath')
 
       // Pause queue
-      await agent
+      await authed.agent
         .post('/api/admin/whatsapp/queue/pause')
-        .set('x-csrf-token', csrf)
-        .send({ reason: 'Maintenance pause' })
+        .set('x-csrf-token', authed.csrf)
+        .send({ reason: 'Manual audit pause' })
         .expect(200)
 
       expect(outboundRateLimiter.isPaused()).toBe(true)
 
       // Resume queue
-      await agent
+      const resumeRes = await authed.agent
         .post('/api/admin/whatsapp/queue/resume')
-        .set('x-csrf-token', csrf)
-        .send({})
+        .set('x-csrf-token', authed.csrf)
         .expect(200)
 
+      expect(resumeRes.body.success).toBe(true)
       expect(outboundRateLimiter.isPaused()).toBe(false)
+    })
+
+    it('previews and dispatches custom campaign broadcast with marketing consent check', async () => {
+      const authed = await loginAgent(app, TEST_ADMIN.username, TEST_ADMIN.password)
+
+      await createTestMember({
+        fullName: 'Consented Member',
+        phone: '9876500091',
+        whatsappMarketingOptIn: true,
+      })
+      await createTestMember({
+        fullName: 'Unconsented Member',
+        phone: '9876500092',
+        whatsappMarketingOptIn: false,
+      })
+
+      // Preview with marketing consent required
+      const previewRes = await authed.agent
+        .post('/api/admin/whatsapp/campaigns/preview')
+        .set('x-csrf-token', authed.csrf)
+        .send({ recipientFilter: 'active', requireMarketingConsent: true })
+        .expect(200)
+
+      expect(previewRes.body.recipientCount).toBe(1)
+      expect(previewRes.body.sampleRecipients[0].phone).toBe('9876500091')
+
+      // Dispatch campaign
+      const sendRes = await authed.agent
+        .post('/api/admin/whatsapp/campaigns/send?wait=true')
+        .set('x-csrf-token', authed.csrf)
+        .send({
+          name: 'Festival Promo',
+          message: 'Happy Diwali to all members!',
+          recipientFilter: 'active',
+          requireMarketingConsent: true,
+        })
+        .expect(200)
+
+      expect(sendRes.body.success).toBe(true)
+      expect(sendRes.body.campaign.recipientCount).toBe(1)
+
+      const historyRes = await authed.agent.get('/api/admin/whatsapp/campaigns').expect(200)
+      expect(historyRes.body.items).toHaveLength(1)
+      expect(historyRes.body.items[0].name).toBe('Festival Promo')
     })
   })
 })

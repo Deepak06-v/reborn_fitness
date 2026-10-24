@@ -315,20 +315,39 @@ Fonts: **Space Grotesk** (display), **Inter** (body), **JetBrains Mono** (teleme
 - `prefers-reduced-motion: reduce` skips all GSAP tweens
 - Skip link, live-region telemetry labels, visible focus rings
 
-## WhatsApp Notifications (Waporta Migration with Evolution Rollback)
+## WhatsApp Notifications (Official Meta WhatsApp Cloud API)
 
-REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated directly into the operations console, powered by **Waporta** using Baileys / WhatsApp Web session connectivity, with configurable multi-provider selection (`waporta`, `evolution`, `mock`).
+REBORN FITNESS includes a native WhatsApp Notification Module integrated directly into the operations console, powered exclusively by **Meta's official WhatsApp Business Platform Cloud API** via Meta Graph API (`v26.0`).
 
-> **Provider Notice**: WhatsApp messaging is powered by [Waporta](https://github.com/iniadil/waporta). Evolution API remains supported as a rollback option.
+All legacy third-party gateways (Waporta, Evolution API, Baileys) have been removed.
 
-### Key Features
-- **Upcoming Fee Reminders**: Identifies active members whose fee is due in exactly 2 days (IST). Runs automatically and deduplicates per member per due date cycle.
-- **Overdue Reminders**: Runs daily for unpaid members. Stops automatically once payment is marked paid. Deduplicates per member per calendar day.
-- **Custom Broadcast Messages**: Targeted broadcasts (All members, Active only, Overdue only, Plan filter) with optional photo/media attachment, recipient count preview, gentle rate pacing, and pre-send confirmation safeguard.
-- **Direct Waporta REST Provider**: REST integration with Waporta endpoints (`/api/whatsapp/send/text`, `/api/whatsapp/send/image`, `/api/whatsapp/sessions/:sessionId`).
-- **Safe Mock Mode**: Safe default when disabled or credentials unset, enabling local development and testing without network calls or credential leaks.
-- **Anti-Ban Campaign Pacing & Session Error Guard**: Configurable delay pacing (`WHATSAPP_CAMPAIGN_DELAY_MS=4000`) complying with Waporta's 20 msgs / 60 sec window; cleanly halts campaigns on session errors (429 rate limit/quota, 403 session ban, 503 gateway unavailable) without repeated firing.
-- **Delivery Tracking Webhook**: Receives Waporta delivery status events (`message.status`: `pending` -> `queued`, `server` -> `sent`, `delivered` -> `delivered`, `read`/`played` -> `read`, `error` -> `failed`) mounted at a high-entropy secret path (`WAPORTA_WEBHOOK_PATH`).
+### Key Capabilities
+
+- **Official Meta Cloud API Provider**: Direct communication with `https://graph.facebook.com/{GRAPH_API_VERSION}/{PHONE_NUMBER_ID}/messages` authenticated by Bearer access tokens.
+- **Approved Meta Template Messaging**: Business-initiated notifications outside the 24-hour customer care window use Meta-approved templates with strictly ordered parameters and international recipient formatting:
+  - `reborn_fee_due_reminder`: Sent 2 days before monthly fee due date.
+  - `reborn_fee_overdue_reminder`: Sent for overdue monthly fees.
+  - `reborn_gym_closure`: Sent for holiday or operational maintenance closures.
+  - `reborn_festive_offer`: Promotional offers sent only to members with explicit marketing consent.
+- **Real-Time Payment Re-Check**: Before dispatching queued fee/overdue reminders, the queue worker re-verifies the member's current billing state against MongoDB. If the member paid in the interim, the message is cancelled as `skipped_paid`.
+- **Marketing Consent & Inbound Opt-Outs**:
+  - Promotional campaigns require explicit consent (`whatsappMarketingOptIn: true`).
+  - Webhooks capture inbound member replies; keywords like `STOP`, `UNSUBSCRIBE`, or `CANCEL` immediately flag the member as opted out (`whatsappMarketingOptIn = false`) and log an audit note.
+- **Meta Webhook Verification & Delivery State Machine**:
+  - `GET /api/whatsapp/webhook`: Challenge verification handshake (`hub.challenge`).
+  - `POST /api/whatsapp/webhook`: HMAC-SHA256 signature verification (`X-Hub-Signature-256`) against raw body bytes using `WHATSAPP_APP_SECRET`.
+  - Monotonic status progression (`queued` → `sent` → `delivered` → `read`, or terminal `failed`). Out-of-order and duplicate webhook events are safely handled.
+- **MongoDB-Backed Outbound Queue**:
+  - Persistent queue recovers uncompleted jobs after server restarts.
+  - Rate limiting (rolling window cap e.g. 15 msgs / 60s) and batch cooldown pacing.
+  - Bounded retries with exponential backoff on transient network failures.
+  - Automatic queue suspension on HTTP 429 rate limit or quota responses.
+- **Admin Console Operations**:
+  - Dedicated WhatsApp Notifications page under `/admin/whatsapp`.
+  - Real-time diagnostic checks (credentials, phone number verification, webhook status).
+  - Queue pause, resume, and clear controls.
+  - Delivery status history, search, and filter.
+  - Safe default: `WHATSAPP_ENABLED=false` until explicitly enabled by the owner.
 
 ---
 
@@ -337,57 +356,136 @@ REBORN FITNESS includes a native WhatsApp Notification Admin Module integrated d
 Add the following variables to `server/.env` (or your Render dashboard):
 
 ```env
-# --- Provider selection: mock, evolution, or waporta ---
-WHATSAPP_PROVIDER=waporta
+# --- Provider selection: mock (tests/dev) or cloud_api (production) ---
+WHATSAPP_PROVIDER=cloud_api
+# Keep false until credentials, webhook verification, and templates are verified!
 WHATSAPP_ENABLED=false
 
-# Waporta Connection (active provider)
-WAPORTA_API_URL=https://waporta.yourdomain.com
-WAPORTA_API_KEY=your-secure-waporta-api-key
-WAPORTA_SESSION_ID=reborn-fitness
+# Meta Graph API version
+WHATSAPP_GRAPH_API_VERSION=v26.0
 
-# Register this complete secret path as Waporta's HTTPS webhook URL path:
-# e.g., https://reborn-fitness.onrender.com/api/whatsapp/waporta-webhook/<random-secret-token>
-WAPORTA_WEBHOOK_PATH=/api/whatsapp/waporta-webhook/replace-with-a-long-random-token
+# Meta Cloud API Credentials (obtain from Meta Developer Portal / Business Manager)
+WHATSAPP_ACCESS_TOKEN=your-meta-system-user-access-token
+WHATSAPP_PHONE_NUMBER_ID=your-meta-phone-number-id
+WHATSAPP_BUSINESS_ACCOUNT_ID=your-meta-business-account-id
+WHATSAPP_APP_SECRET=your-meta-app-secret
 
-# Campaign pacing in milliseconds (default: 4000 ms)
+# Webhook Verification Token & Path
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=your-custom-webhook-verify-token
+WHATSAPP_WEBHOOK_PATH=/api/whatsapp/webhook
+
+# Approved Meta Message Templates
+WHATSAPP_TEMPLATE_FEE_DUE=reborn_fee_due_reminder
+WHATSAPP_TEMPLATE_FEE_DUE_LANG=en_US
+WHATSAPP_TEMPLATE_FEE_OVERDUE=reborn_fee_overdue_reminder
+WHATSAPP_TEMPLATE_FEE_OVERDUE_LANG=en_US
+WHATSAPP_TEMPLATE_GYM_CLOSURE=reborn_gym_closure
+WHATSAPP_TEMPLATE_GYM_CLOSURE_LANG=en_US
+WHATSAPP_TEMPLATE_FESTIVE_OFFER=reborn_festive_offer
+WHATSAPP_TEMPLATE_FESTIVE_OFFER_LANG=en_US
+
+# Sequential queue batching and cooldown pacing
+WHATSAPP_QUEUE_BATCH_SIZE=5
+WHATSAPP_QUEUE_BATCH_COOLDOWN_MS=5000
+WHATSAPP_MESSAGE_DELAY_MS=1500
+
+# Rolling-window rate limiter settings (safe conservative limit, e.g. 15 msgs / 60s)
+WHATSAPP_RATE_LIMIT_MAX_PER_WINDOW=15
+WHATSAPP_RATE_LIMIT_WINDOW_MS=60000
+WHATSAPP_MAX_RETRIES=3
+
+# Broadcast campaign inter-message pacing (default: 4000 ms)
 WHATSAPP_CAMPAIGN_DELAY_MS=4000
-
-# Evolution API (retained temporarily for rollback option)
-EVOLUTION_API_URL=
-EVOLUTION_API_KEY=
-EVOLUTION_INSTANCE_NAME=reborn-fitness
-EVOLUTION_WEBHOOK_SECRET=
-EVOLUTION_WEBHOOK_PATH=/api/whatsapp/evolution-webhook
 ```
 
 ---
 
-### Waporta Gateway Server Configuration
+### Meta WhatsApp Cloud API Setup Guide
 
-On your standalone Waporta deployment, set the gateway's own environment variables:
+Follow these steps to set up Meta Cloud API for REBORN FITNESS:
 
-```env
-PORT=3000
-API_KEY=your-secure-waporta-api-key
-WEBHOOK_STATUS_EVENTS=true
-```
+#### Step 1: Create a Meta App
+1. Go to [developers.facebook.com](https://developers.facebook.com) and log in with your Meta Business account.
+2. Click **My Apps** > **Create App**.
+3. Select **Other** > **Business** as the app type.
+4. Name your app (e.g., `REBORN FITNESS Notifications`) and connect your Meta Business Portfolio.
+5. In the App Dashboard, scroll to **WhatsApp** and click **Set up**.
 
-Register the webhook on the `reborn-fitness` session:
-- **Webhook URL**: `https://api.yourgymdomain.com/api/whatsapp/waporta-webhook/<your-random-secret-token>`
-- **Events**: `message.status` enabled via `WEBHOOK_STATUS_EVENTS=true`
+#### Step 2: Configure Business Phone Number
+1. Under **WhatsApp** > **API Setup**:
+   - In development/sandbox mode, you can test with Meta's Test Phone Number and register test recipient numbers.
+   - In production, add your gym's official phone number under **Step 5: Add a phone number**.
+   - Complete SMS/voice OTP verification.
+2. Note your **Phone Number ID** and **WhatsApp Business Account ID (WABA ID)**.
+
+#### Step 3: Generate a Permanent System User Token
+> **Critical**: Do NOT use the temporary 24-hour User Access Token from the API Setup page in production.
+1. In [Meta Business Suite](https://business.facebook.com), navigate to **Settings** > **Users** > **System Users**.
+2. Click **Add** to create an Admin System User (e.g., `reborn-api-service`).
+3. Under **Assigned Assets**, assign your WhatsApp Business Account with **Full Control** (Manage WhatsApp account).
+4. Click **Generate New Token**:
+   - App: Select `REBORN FITNESS Notifications`.
+   - Token expiration: **Never**.
+   - Permissions: Select `whatsapp_business_messaging` and `whatsapp_business_management`.
+5. Copy the generated token immediately into `WHATSAPP_ACCESS_TOKEN`.
+6. From **App Settings** > **Basic** in Developer Dashboard, copy the **App Secret** into `WHATSAPP_APP_SECRET`.
+
+#### Step 4: Create and Submit Message Templates for Approval
+In [WhatsApp Manager](https://business.facebook.com/wa/manage/message-templates/):
+1. **Fee Due Reminder** (`reborn_fee_due_reminder`):
+   - Category: `UTILITY` | Language: `en_US`
+   - Body: `Hello {{1}}, this is a friendly reminder from REBORN FITNESS that your gym membership fee of {{2}} for the month of {{3}} is due on {{4}}. Please ensure timely payment to maintain uninterrupted access.`
+2. **Fee Overdue Reminder** (`reborn_fee_overdue_reminder`):
+   - Category: `UTILITY` | Language: `en_US`
+   - Body: `Hello {{1}}, your gym membership fee of {{2}} for the month of {{3}} was due on {{4}} and is currently overdue. Please clear your dues at the desk or online to keep your membership active.`
+3. **Gym Closure Announcement** (`reborn_gym_closure`):
+   - Category: `UTILITY` | Language: `en_US`
+   - Body: `Important Notice from REBORN FITNESS: The gym will remain closed from {{1}} to {{2}} due to {{3}}. Regular operations resume on {{4}}. We regret any inconvenience caused.`
+4. **Festive Offer / Promotion** (`reborn_festive_offer`):
+   - Category: `MARKETING` | Language: `en_US`
+   - Body: `Exclusive Offer from REBORN FITNESS! Dear {{1}}, celebrate {{2}} with {{3}} off on our annual memberships. Offer valid until {{4}}. Visit our desk to claim!`
+
+Wait for Meta's review and approval (typically a few minutes to hours for utility templates).
+
+#### Step 5: Configure the Webhook
+1. In Meta Developer Dashboard > **WhatsApp** > **Configuration**:
+2. Click **Edit** next to Webhook:
+   - **Callback URL**: `https://<your-render-service>.onrender.com/api/whatsapp/webhook`
+   - **Verify Token**: Any secret string you choose (must match `WHATSAPP_WEBHOOK_VERIFY_TOKEN`).
+3. Click **Verify and Save**. Meta will issue a `GET` request with `hub.challenge`.
+4. In Webhook Fields, find **`messages`** and click **Subscribe**.
+
+#### Step 6: Render Backend Deployment
+1. Open your Render dashboard for the `reborn-fitness-server` service.
+2. In **Environment**, configure:
+   - `WHATSAPP_PROVIDER=cloud_api`
+   - `WHATSAPP_GRAPH_API_VERSION=v26.0`
+   - `WHATSAPP_ACCESS_TOKEN=<Permanent System User Token>`
+   - `WHATSAPP_PHONE_NUMBER_ID=<Phone Number ID>`
+   - `WHATSAPP_BUSINESS_ACCOUNT_ID=<WABA ID>`
+   - `WHATSAPP_APP_SECRET=<App Secret>`
+   - `WHATSAPP_WEBHOOK_VERIFY_TOKEN=<Verify Token>`
+   - `WHATSAPP_WEBHOOK_PATH=/api/whatsapp/webhook`
+   - `WHATSAPP_ENABLED=false` (start with false!)
+3. Trigger a manual deploy.
 
 ---
 
-### Implementation & Verification Status
+### Owner Pre-Launch Checklist
 
-- [x] Multi-provider architecture supporting `mock`, `evolution`, and `waporta`.
-- [x] Provider-aware startup checks and status diagnostics without leaking secrets.
-- [x] `WaportaWhatsAppProvider` REST implementation (`sendTextMessage`, `sendMediaMessage`, `getConnectionStatus`, `getMessageStatus`).
-- [x] Initial socket acknowledgment (`ack: socket`) recorded as `queued` until delivery-status webhook confirmation arrives.
-- [x] Dedicated Waporta webhook endpoint mounted on secret path (`WAPORTA_WEBHOOK_PATH`) with session verification and status hierarchy protections.
-- [x] Anti-ban campaign pacing (`WHATSAPP_CAMPAIGN_DELAY_MS`) and clean halt on 429/403/503.
-- [x] Evolution provider and webhook retained for zero-downtime rollback.
-- [x] Admin console UI updated with provider badges, status cards, and attribution.
-- [x] 119 automated tests passing across 9 test files.
+Before toggling `WHATSAPP_ENABLED=true` on production:
+
+1. [ ] **Meta Business Verification**: Ensure the Business Portfolio is verified in Meta Business Manager.
+2. [ ] **Payment Method Added**: Confirm a valid credit/debit card is added to the WhatsApp Business Account for Meta conversation tier billing.
+3. [ ] **Templates Approved**: Verify in WhatsApp Manager that `reborn_fee_due_reminder`, `reborn_fee_overdue_reminder`, `reborn_gym_closure`, and `reborn_festive_offer` have status **Approved** (Green).
+4. [ ] **Webhook Active**: Confirm the Meta Developer App shows `Webhook Verified` with active subscription to `messages`.
+5. [ ] **Admin Diagnostics Clean**: Open `/admin/whatsapp` in the REBORN FITNESS console. Check that:
+   - Provider displays **Meta Cloud API**.
+   - Phone Number ID and WABA ID match.
+   - Status shows Connected / Configured.
+6. [ ] **Single Test Send**: Send a single test template to the gym owner's personal verified number. Confirm:
+   - Message arrives on WhatsApp.
+   - Delivery webhook changes status from `queued` → `sent` → `delivered` → `read` in the admin log.
+7. [ ] **Marketing Opt-In Hygiene**: Verify that promotional messages are only targeted to members who have given express consent (`whatsappMarketingOptIn`).
+8. [ ] **Enable Live Messaging**: Set `WHATSAPP_ENABLED=true` in Render environment variables and save.
 

@@ -8,8 +8,8 @@ import type {
   PaymentDetailResponse,
   PaymentListResponse,
   Plan,
-  WhatsAppCampaignItem,
-  WhatsAppHistoryItem,
+  WhatsAppCampaignsResponse,
+  WhatsAppHistoryResponse,
   WhatsAppOverdueItem,
   WhatsAppStatusResponse,
   WhatsAppUpcomingItem,
@@ -240,8 +240,10 @@ export const adminApi = {
     },
   },
   whatsapp: {
-    getStatus(): Promise<WhatsAppStatusResponse> {
-      return request<WhatsAppStatusResponse>('/whatsapp/status')
+    getStatus(fresh = false): Promise<WhatsAppStatusResponse> {
+      return request<WhatsAppStatusResponse>('/whatsapp/status', {
+        query: fresh ? { fresh: 'true' } : undefined,
+      })
     },
     getUpcomingDue(): Promise<{ items: WhatsAppUpcomingItem[]; count: number }> {
       return request<{ items: WhatsAppUpcomingItem[]; count: number }>('/whatsapp/upcoming-due')
@@ -249,11 +251,11 @@ export const adminApi = {
     getOverdue(): Promise<{ items: WhatsAppOverdueItem[]; count: number }> {
       return request<{ items: WhatsAppOverdueItem[]; count: number }>('/whatsapp/overdue')
     },
-    getCampaigns(): Promise<{ items: WhatsAppCampaignItem[] }> {
-      return request<{ items: WhatsAppCampaignItem[] }>('/whatsapp/campaigns')
+    getCampaigns(query: { page?: number; limit?: number } = {}): Promise<WhatsAppCampaignsResponse> {
+      return request<WhatsAppCampaignsResponse>('/whatsapp/campaigns', { query })
     },
-    getHistory(limit = 50): Promise<{ items: WhatsAppHistoryItem[] }> {
-      return request<{ items: WhatsAppHistoryItem[] }>('/whatsapp/history', { query: { limit } })
+    getHistory(query: { page?: number; limit?: number; status?: string; type?: string } = {}): Promise<WhatsAppHistoryResponse> {
+      return request<WhatsAppHistoryResponse>('/whatsapp/history', { query })
     },
     previewCampaign(body: {
       recipientFilter: string

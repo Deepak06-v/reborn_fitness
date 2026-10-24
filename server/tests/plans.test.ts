@@ -36,7 +36,7 @@ describe('membership plan catalogue', () => {
   it('exposes the catalogue to authenticated admins', async () => {
     const response = await session.agent.get('/api/admin/plans').expect(200)
     const ids = response.body.plans.map((plan: { id: string }) => plan.id)
-    expect(ids).toHaveLength(18)
+    expect(ids).toHaveLength(PLANS.length)
     expect(ids).toContain('monthly')
     expect(ids).toContain('monthly-1500')
     expect(ids).toContain('monthly-2000')

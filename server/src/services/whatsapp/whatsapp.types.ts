@@ -1,8 +1,6 @@
-export type NormalizedEvolutionPhone = string
-export type NormalizedWaportaPhone = string
 export type NormalizedMetaPhone = string
 
-export type WhatsAppProviderType = 'mock' | 'evolution' | 'waporta'
+export type WhatsAppProviderType = 'mock' | 'cloud_api'
 
 export interface WhatsAppMessageResult {
   success: boolean
@@ -10,6 +8,7 @@ export interface WhatsAppMessageResult {
   status?: 'sent' | 'queued' | 'failed'
   error?: string
   httpStatus?: number
+  fbtraceId?: string
 }
 
 export type WhatsAppConnectionState =
@@ -24,6 +23,9 @@ export interface WhatsAppConnectionStatusResult {
   state: 'connected' | 'disconnected' | 'unreachable' | 'unconfigured' | 'unavailable'
   rawState?: string
   details?: string
+  verifiedName?: string
+  displayPhoneNumber?: string
+  qualityRating?: string
 }
 
 export interface WhatsAppTemplateParameter {
@@ -54,87 +56,79 @@ export interface SendTextOptions {
 
 export interface SendMediaOptions {
   to: string
-  type: 'image'
+  type?: 'image' | 'document' | 'video'
   mediaUrl: string
   caption?: string
   timeoutMs?: number
 }
 
-export interface EvolutionWebhookEventData {
-  key?: {
-    remoteJid?: string
-    fromMe?: boolean
-    id?: string
+export interface MetaApiError {
+  message: string
+  type?: string
+  code: number
+  error_subcode?: number
+  error_data?: {
+    messaging_product?: string
+    details?: string
   }
-  keyId?: string
-  id?: string
-  messageId?: string
-  status?: string | number
-  update?: {
-    status?: string | number
-  }
-  messageTimestamp?: number | string
-  date_time?: string
-  error?: string | { message?: string }
-  [key: string]: unknown
+  fbtrace_id?: string
 }
 
-export interface EvolutionWebhookPayload {
-  event?: string
-  instance?: string
-  data?: EvolutionWebhookEventData | EvolutionWebhookEventData[]
-  sender?: string
-  destination?: string
-  date_time?: string
-  server_url?: string
-  apikey?: string
-  [key: string]: unknown
+export interface MetaSendMessageResponse {
+  messaging_product?: string
+  contacts?: Array<{
+    input: string
+    wa_id: string
+  }>
+  messages?: Array<{
+    id: string
+    message_status?: string
+  }>
+  error?: MetaApiError
 }
 
-export interface WaportaWebhookPayload {
-  event?: string
-  sessionId?: string
-  messageId?: string
-  recipient?: string
-  status?: string
-  timestamp?: number | string
-  error?: string
-  data?: {
-    sessionId?: string
-    messageId?: string
-    recipient?: string
-    status?: string
-    timestamp?: number | string
-    error?: string
-    [key: string]: unknown
-  }
-  [key: string]: unknown
+export interface MetaPhoneNumberDetailsResponse {
+  id: string
+  verified_name?: string
+  display_phone_number?: string
+  quality_rating?: string
+  code_verification_status?: string
+  account_mode?: string
+  error?: MetaApiError
 }
 
-export interface WaportaSessionStatusResponse {
-  sessionId?: string
-  status?: string
-  state?: string
-  session?: {
-    status?: string
-    state?: string
-    [key: string]: unknown
-  }
-  [key: string]: unknown
-}
-
-// Retained for historical / backward-compatibility
 export interface MetaWebhookStatus {
   id: string
   status: 'sent' | 'delivered' | 'read' | 'failed'
   timestamp: string
   recipient_id: string
+  conversation?: {
+    id: string
+    expiration_timestamp?: string
+    origin?: {
+      type: string
+    }
+  }
+  pricing?: {
+    billable: boolean
+    pricing_model: string
+    category: string
+  }
   errors?: Array<{
     code: number
     title: string
     message?: string
     error_data?: { details: string }
   }>
+}
+
+export interface MetaWebhookMessage {
+  from: string
+  id: string
+  timestamp: string
+  type: string
+  text?: { body: string }
+  [key: string]: unknown
 }
 
 export interface MetaWebhookEntry {
@@ -147,12 +141,11 @@ export interface MetaWebhookEntry {
         phone_number_id: string
       }
       statuses?: MetaWebhookStatus[]
-      messages?: Array<{
-        from: string
-        id: string
-        timestamp: string
-        type: string
-        text?: { body: string }
+      messages?: MetaWebhookMessage[]
+      errors?: Array<{
+        code: number
+        title: string
+        message?: string
       }>
     }
     field: string

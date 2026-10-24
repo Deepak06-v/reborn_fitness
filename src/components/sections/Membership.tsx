@@ -1,9 +1,10 @@
-import { Check, Gift, Instagram, Sparkles, Tag } from 'lucide-react'
+import { useState } from 'react'
+import { Check, ChevronDown, ChevronUp, Gift, Instagram, Sparkles, Tag } from 'lucide-react'
 import type { Plan } from '../../types'
 import { plans } from '../../data/plans'
 import { brand, social } from '../../data/site'
 import { cn } from '../../lib/utils'
-import { LinkButton } from '../ui/Button'
+import { Button, LinkButton } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { SectionHeading } from '../ui/SectionHeading'
 import { ScrollReveal } from '../animations/ScrollReveal'
@@ -29,21 +30,46 @@ function enquiryHref(plan: Plan) {
   )}&body=${encodeURIComponent(body)}`
 }
 
+const INITIAL_PLANS_ORDER = ['monthly', 'three-months', 'six-months', 'yearly']
+
 export function Membership() {
+  const [visibleCount, setVisibleCount] = useState<number>(4)
+
+  // Prioritize the 4 core plans first (Monthly, 3 Months, 6 Months, Yearly), followed by the rest
+  const initialFour = INITIAL_PLANS_ORDER.map((id) => plans.find((p) => p.id === id)).filter(
+    (p): p is Plan => Boolean(p),
+  )
+  const remainingPlans = plans.filter((p) => !INITIAL_PLANS_ORDER.includes(p.id))
+  const orderedPlans = [...initialFour, ...remainingPlans]
+  const displayedPlans = orderedPlans.slice(0, visibleCount)
+  const hasMore = visibleCount < orderedPlans.length
+
+  const handleShowMore = () => {
+    setVisibleCount((prev) => Math.min(prev + 4, orderedPlans.length))
+  }
+
+  const handleShowLess = () => {
+    setVisibleCount(4)
+    const el = document.getElementById('memberships')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
   return (
     <section id="memberships" className="scroll-mt-[var(--nav-h)] py-20 sm:py-28">
       <div className="section-shell">
         <SectionHeading
           eyebrow="Memberships / 03"
           title="Simple membership plans"
-          description="Four straightforward packages with clear pricing in Indian Rupees. Longer plans include a genuine discount — ask us about any of them."
+          description="Transparent packages with clear pricing in Indian Rupees. Showing top options with flexible durations and personal training plans available."
           align="center"
           className="mx-auto items-center"
         />
 
         <ul className="mt-10 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-          {plans.map((plan, index) => (
-            <ScrollReveal key={plan.id} direction="rise" delay={index * 0.08}>
+          {displayedPlans.map((plan, index) => (
+            <ScrollReveal key={plan.id} direction="rise" delay={Math.min(index % 4, 3) * 0.08}>
               <Card
                 interactive
                 className={cn(
@@ -104,7 +130,7 @@ export function Membership() {
                     </p>
                   ) : (
                     <p className="mt-2 font-mono text-[0.6875rem] uppercase tracking-[0.12em] text-dim">
-                      No contract — pay for one month
+                      Flexible membership — upfront pricing
                     </p>
                   )}
                 </div>
@@ -139,6 +165,33 @@ export function Membership() {
             </ScrollReveal>
           ))}
         </ul>
+
+        {/* View More / Pagination Controls */}
+        <div className="mt-10 flex flex-col items-center justify-center gap-3">
+          {hasMore ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              onClick={handleShowMore}
+              className="flex items-center gap-2"
+            >
+              <ChevronDown className="h-4 w-4" />
+              View More Plans ({visibleCount} of {orderedPlans.length})
+            </Button>
+          ) : orderedPlans.length > 4 ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              onClick={handleShowLess}
+              className="flex items-center gap-2"
+            >
+              <ChevronUp className="h-4 w-4" />
+              Show Less
+            </Button>
+          ) : null}
+        </div>
 
         <div className="mt-8 flex flex-col items-center justify-center gap-3 text-center">
           <p className="max-w-[52ch] text-sm leading-relaxed text-muted">

@@ -25,6 +25,7 @@ export interface MemberDoc extends Document<Types.ObjectId> {
   joiningDate: Date
   monthlyFeePaise: number
   status: MemberStatus
+  whatsappMarketingOptIn?: boolean
   archivedAt?: Date | null
   archivedBy?: Types.ObjectId | null
   createdAt: Date
@@ -66,6 +67,7 @@ const memberSchema = new Schema<MemberDoc, MemberModel>(
       default: 'active',
       index: true,
     },
+    whatsappMarketingOptIn: { type: Boolean, default: false },
     archivedAt: { type: Date, default: null },
     archivedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
   },

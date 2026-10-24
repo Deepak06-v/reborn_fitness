@@ -253,7 +253,9 @@ export interface WhatsAppStatusResponse {
   connectionState?: WhatsAppConnectionState
   rawState?: string
   apiVersion?: string
+  graphApiVersion?: string
   phoneNumberId?: string | null
+  businessAccountId?: string | null
 }
 
 export interface WhatsAppNotificationState {
@@ -328,5 +330,21 @@ export interface WhatsAppHistoryItem {
   readAt: string | null
   error: string | null
   createdAt: string
+}
+
+export interface WhatsAppHistoryResponse {
+  items: WhatsAppHistoryItem[]
+  page: number
+  limit: number
+  total: number
+  hasMore: boolean
+}
+
+export interface WhatsAppCampaignsResponse {
+  items: WhatsAppCampaignItem[]
+  page: number
+  limit: number
+  total: number
+  hasMore: boolean
 }
 

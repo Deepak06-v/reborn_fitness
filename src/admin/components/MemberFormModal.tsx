@@ -35,6 +35,8 @@ const planDurationMonthsMap: Record<string, number> = {
   'thirteen-months': 13,
   'fourteen-months': 14,
   'fifteen-months': 15,
+  'pt-3-months': 3,
+  'pt-6-months': 6,
 }
 
 const planDurationDaysMap: Record<string, number> = {
