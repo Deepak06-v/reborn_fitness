@@ -9,7 +9,7 @@
       "destination": "https://reborn-fitness.onrender.com/api"
     },
     {
-      "source": "/((?!api/|.*\\.(?:js|css|json|map|png|jpe?g|gif|svg|webp|avif|ico|mp4|webm|pdf|txt|woff2?|eot|ttf|otf)$).*)",
+      "source": "/((?!api/|.*\\.(?:js|css|json|map|png|jpe?g|gif|svg|webp|avif|ico|mp4|webm|pdf|txt|xml|woff2?|eot|ttf|otf)$).*)",
       "destination": "/index.html"
     }
   ]

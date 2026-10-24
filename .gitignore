@@ -48,6 +48,9 @@ worktrees/
 # Test coverage
 coverage
 
+# Image optimization backups
+public/chandan/backup/
+
 # TypeScript build info
 *.tsbuildinfo
 

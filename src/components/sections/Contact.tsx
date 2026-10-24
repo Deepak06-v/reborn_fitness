@@ -62,7 +62,7 @@ export function Contact() {
       <div className="section-shell">
         <SectionHeading
           eyebrow="Location / 06"
-          title="Visit or get in touch"
+          title="Gym Location & Contact Information"
           description="Find us in Hirekerur, Karnataka, or reach Chandan directly by phone, email or Instagram to plan your first session."
         />
 

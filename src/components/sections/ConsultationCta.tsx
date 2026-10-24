@@ -33,8 +33,8 @@ export function ConsultationCta() {
                 <span className="h-px w-8 bg-accent/60" aria-hidden="true" />
               </div>
 
-              <h2 className="display-lg max-w-[16ch] text-balance">
-                Your first step is free.
+              <h2 className="display-lg max-w-[20ch] text-balance">
+                Free Fitness Consultation: Your First Step Is Free
               </h2>
 
               <p className="max-w-[52ch] text-sm leading-relaxed text-muted sm:text-base">

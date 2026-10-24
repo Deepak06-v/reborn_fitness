@@ -112,7 +112,10 @@ export function Hero({ preloaderDone = true }: HeroProps) {
             </p>
           </ScrollReveal>
 
-          <h1 className="display-xl max-w-[15ch] text-white">
+          <h1 className="display-xl max-w-[16ch] text-white">
+            <span className="mb-3 block font-mono text-xs font-semibold uppercase tracking-[0.2em] text-accent sm:text-sm">
+              Fitness and Strength Training in Hirekerur
+            </span>
             {preloaderDone ? (
               <StaggerText lines={['REBORN YOUR', 'LIMITS']} />
             ) : (

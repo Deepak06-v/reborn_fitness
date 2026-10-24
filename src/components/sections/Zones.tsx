@@ -20,7 +20,7 @@ export function Zones() {
               <p className="label-telemetry text-accent">Inside Reborn Fitness</p>
             </div>
             <h2 className="display-lg max-w-[20ch] text-balance">
-              Built to move. Made to perform.
+              Gym Facilities: Built to Move, Made to Perform
             </h2>
           </div>
 
