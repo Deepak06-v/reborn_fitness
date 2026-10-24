@@ -61,7 +61,7 @@ export function Membership() {
       <div className="section-shell">
         <SectionHeading
           eyebrow="Memberships / 03"
-          title="Simple membership plans"
+          title="Gym Membership Plans"
           description="Transparent packages with clear pricing in Indian Rupees. Showing top options with flexible durations and personal training plans available."
           align="center"
           className="mx-auto items-center"

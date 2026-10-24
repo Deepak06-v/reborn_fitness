@@ -27,7 +27,7 @@ export function TransformationShowcase() {
         <div className="flex flex-wrap items-end justify-between gap-6">
           <SectionHeading
             eyebrow="Real Results"
-            title="Your Transformation Starts Here."
+            title="Client Transformations & Results"
             description="Every transformation starts with a decision. Tell us your goal and take the first step with a free consultation."
           />
 

@@ -173,11 +173,11 @@ export function Trainer() {
   }, [clearAutoAdvance])
 
   return (
-    <section ref={sectionRef} className="py-20 sm:py-28">
+    <section id="trainer" ref={sectionRef} className="scroll-mt-[var(--nav-h)] py-20 sm:py-28">
       <div className="section-shell">
         <SectionHeading
           eyebrow="Your Trainer / 05"
-          title="Meet your trainer"
+          title="Meet Your Trainer"
           description="REBORN FITNESS is run by Chandan, your point of contact for training, sessions and memberships."
         />
 
@@ -188,7 +188,7 @@ export function Trainer() {
                 {coach.image ? (
                   <img
                     src={coach.image}
-                    alt={coach.name}
+                    alt={`${coach.name} - Fitness Trainer and Coach at REBORN FITNESS`}
                     loading="lazy"
                     className="absolute inset-0 h-full w-full object-contain"
                   />

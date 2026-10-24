@@ -23,7 +23,7 @@ export interface TransformationPhoto {
   focalPoint?: string
 }
 
-const ALT = 'REBORN FITNESS transformation'
+const ALT = 'REBORN FITNESS member fitness transformation in Hirekerur'
 
 export const transformationPhotos: TransformationPhoto[] = [
   { src: '/transformation/WhatsApp Image 2026-10-10 at 09.46.10 (1).jpeg', alt: ALT },
