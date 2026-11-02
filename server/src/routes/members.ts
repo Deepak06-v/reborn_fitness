@@ -33,7 +33,8 @@ router.post(
   '/',
   validate({ body: createMemberSchema }),
   asyncHandler(async (req, res) => {
-    const member = await createMember(req.body)
+    const adminId = (req.admin as NonNullable<typeof req.admin>)?._id?.toString()
+    const member = await createMember(req.body, adminId)
     res.status(201).json({ member: serializeMember(member) })
   }),
 )

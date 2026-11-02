@@ -3,7 +3,7 @@ import { Member, type MemberDoc } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
 import { getPlan } from '../config/plans'
 import { ApiError } from '../utils/errors'
-import { addDays, addMonthsClamped, currentMonth } from '../utils/month'
+import { addDays, addMonthsClamped, currentMonth, monthRange } from '../utils/month'
 import {
   evaluatePaymentStatus,
   outstandingBalance,
@@ -57,7 +57,7 @@ function sortSpec(sort?: string): Record<string, SortOrder> {
   }
 }
 
-export async function createMember(input: MemberInput): Promise<MemberDoc> {
+export async function createMember(input: MemberInput, adminId?: string): Promise<MemberDoc> {
   const phone = normalizePhone(input.phone)
   if (!isValidPhone(phone)) {
     throw ApiError.unprocessable('Phone number must contain exactly 10 digits', [
@@ -93,7 +93,7 @@ export async function createMember(input: MemberInput): Promise<MemberDoc> {
   })
 
   try {
-    const period = await createInitialPeriod(member)
+    const period = await createInitialPeriod(member, { autoSettle: true, adminId })
     member.nextBillingDate =
       period.periodEnd ??
       (plan.durationDays
@@ -202,11 +202,15 @@ export async function listMembers(params: ListMembersParams) {
   }
 
   const selectedMonth = params.month ?? currentMonth()
+  const { start: mStart, end: mEnd } = monthRange(selectedMonth)
 
   if (params.paymentStatus) {
     const now = new Date()
     const matches = await MonthlyPayment.find({
-      billingMonth: selectedMonth,
+      $or: [
+        { billingMonth: selectedMonth },
+        { periodStart: { $lt: mEnd }, periodEnd: { $gt: mStart } },
+      ],
       $expr: paymentStatusExpr(params.paymentStatus, now),
     })
       .select('member')
@@ -224,7 +228,13 @@ export async function listMembers(params: ListMembersParams) {
 
   const ids = members.map((member) => member._id)
   const [payments, outstanding] = await Promise.all([
-    MonthlyPayment.find({ member: { $in: ids }, billingMonth: selectedMonth }).sort({
+    MonthlyPayment.find({
+      member: { $in: ids },
+      $or: [
+        { billingMonth: selectedMonth },
+        { periodStart: { $lt: mEnd }, periodEnd: { $gt: mStart } },
+      ],
+    }).sort({
       periodStart: -1,
     }),
     MonthlyPayment.aggregate<{ _id: Types.ObjectId; total: number }>([
@@ -279,6 +289,7 @@ export async function listMembers(params: ListMembersParams) {
               statusLabel: evalResult.label,
               daysLeft: evalResult.daysLeft,
               sortGroup: evalResult.sortGroup,
+              isAutoSettled: Boolean(payment.isAutoSettled),
             }
           })()
         : null,

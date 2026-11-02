@@ -28,6 +28,7 @@ export const PLANS: readonly MembershipPlan[] = [
   { id: 'two-months', name: '2 Months', durationMonths: 2, pricePaise: 200_000 },
   { id: 'three-months', name: '3 Months', durationMonths: 3, pricePaise: 270_000 },
   { id: 'four-months', name: '4 Months', durationMonths: 4, pricePaise: 400_000 },
+  { id: '4months-5000', name: '4 Months – ₹5,000', durationMonths: 4, pricePaise: 500_000 },
   { id: 'five-months', name: '5 Months', durationMonths: 5, pricePaise: 500_000 },
   { id: 'six-months', name: '6 Months', durationMonths: 6, pricePaise: 500_000 },
   { id: 'seven-months', name: '7 Months', durationMonths: 7, pricePaise: 700_000 },

@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other'
+export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other' | 'auto_registration'
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overdue'
 export type DueState = 'paid' | 'unpaid' | 'due_soon' | 'overdue'
 export type PaymentFilterStatus = DueState
@@ -63,6 +63,7 @@ export interface CurrentMonthPayment {
   statusLabel?: string
   daysLeft?: number | null
   sortGroup?: number
+  isAutoSettled?: boolean
 }
 
 export interface MemberListItem extends Member {
@@ -124,6 +125,7 @@ export interface Payment {
   statusLabel?: string
   daysLeft?: number | null
   sortGroup?: number
+  isAutoSettled?: boolean
   paymentEntries: PaymentEntry[]
   createdAt: string
   updatedAt: string

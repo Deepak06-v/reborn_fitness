@@ -1,7 +1,7 @@
 import { Schema, model, models, type Document, type Model, type Types } from 'mongoose'
 import type { BasePaymentStatus } from '../utils/paymentStatus'
 
-export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other'
+export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'other' | 'auto_registration'
 
 export interface PaymentEntry {
   _id: Types.ObjectId
@@ -10,7 +10,7 @@ export interface PaymentEntry {
   method: PaymentMethod
   referenceNumber: string | null
   notes: string | null
-  recordedBy: Types.ObjectId
+  recordedBy: Types.ObjectId | null
   recordedAt: Date
   voided: boolean
   voidedBy: Types.ObjectId | null
@@ -44,6 +44,7 @@ export interface MonthlyPaymentDoc extends Document<Types.ObjectId> {
   amountPaidPaise: number
   dueDate: Date
   status: BasePaymentStatus
+  isAutoSettled?: boolean
   paymentEntries: Types.DocumentArray<PaymentEntry>
   createdAt: Date
   updatedAt: Date
@@ -63,12 +64,12 @@ const paymentEntrySchema = new Schema<PaymentEntry>(
     paymentDate: { type: Date, required: true },
     method: {
       type: String,
-      enum: ['cash', 'upi', 'bank_transfer', 'card', 'other'],
+      enum: ['cash', 'upi', 'bank_transfer', 'card', 'other', 'auto_registration'],
       required: true,
     },
     referenceNumber: { type: String, default: null, trim: true, maxlength: 120 },
     notes: { type: String, default: null, trim: true, maxlength: 1000 },
-    recordedBy: { type: Schema.Types.ObjectId, ref: 'Admin', required: true },
+    recordedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
     recordedAt: { type: Date, default: () => new Date() },
     voided: { type: Boolean, default: false },
     voidedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
@@ -103,6 +104,7 @@ const monthlyPaymentSchema = new Schema<MonthlyPaymentDoc>(
     amountPaidPaise: { type: Number, required: true, default: 0, min: 0 },
     dueDate: { type: Date, required: true },
     status: { type: String, enum: ['unpaid', 'partial', 'paid'], default: 'unpaid' },
+    isAutoSettled: { type: Boolean, default: false },
     paymentEntries: { type: [paymentEntrySchema], default: [] },
   },
   { timestamps: true, versionKey: false },

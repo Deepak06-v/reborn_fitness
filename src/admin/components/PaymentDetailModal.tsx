@@ -231,9 +231,16 @@ export function PaymentDetailModal({
         <div className="space-y-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="font-display text-base font-bold tracking-tight text-white">
-                {payment.invoiceNumber ?? 'Billing record'}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="font-display text-base font-bold tracking-tight text-white">
+                  {payment.invoiceNumber ?? 'Billing record'}
+                </p>
+                {payment.isAutoSettled ? (
+                  <span className="rounded border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[0.625rem] uppercase tracking-wider text-accent">
+                    Auto-settled
+                  </span>
+                ) : null}
+              </div>
               <p className="font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-dim">
                 {payment.planName ?? 'Plan'}
                 {payment.durationMonths ? ` · ${payment.durationMonths} months` : ''}

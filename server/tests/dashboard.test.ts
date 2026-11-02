@@ -1,5 +1,6 @@
 import type { Express } from 'express'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { MonthlyPayment } from '../src/models/MonthlyPayment'
 import {
   clearDatabase,
   createAdmin,
@@ -78,6 +79,12 @@ describe('dashboard', () => {
       phone: '9000000002',
       joiningDate: istDay(-40),
     })
+
+    // Reset both to unpaid to test manual payment recording and metrics
+    await MonthlyPayment.updateMany(
+      { member: { $in: [alice.id, bob.id] } },
+      { $set: { amountPaidPaise: 0, status: 'unpaid', isAutoSettled: false, paymentEntries: [] } },
+    )
 
     const alicePayment = await findPayment(alice.memberId, istDay(-40).slice(0, 7))
     await session.agent

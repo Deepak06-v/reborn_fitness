@@ -226,6 +226,11 @@ export function PaymentsPage() {
                         <p className="font-mono text-[0.625rem] text-dim">
                           {payment.invoiceNumber}
                           {payment.planName ? ` · ${payment.planName}` : ''}
+                          {payment.isAutoSettled ? (
+                            <span className="ml-1.5 inline-block rounded border border-hairline/60 bg-white/[0.04] px-1 py-0.5 text-[0.5625rem] font-mono uppercase tracking-wider text-muted">
+                              Auto-settled
+                            </span>
+                          ) : null}
                         </p>
                       ) : null}
                       {payment.periodStart ? (

@@ -77,6 +77,16 @@ export const plans: Plan[] = [
     features: ['4 months of full gym access'],
   },
   {
+    id: '4months-5000',
+    name: '4 Months – ₹5,000',
+    duration: '4 months',
+    regularPrice: 5000,
+    offerPrice: 5000,
+    featured: false,
+    blurb: 'Four months of structured training package at ₹5,000.',
+    features: ['4 months of full gym access', 'Flexible start date'],
+  },
+  {
     id: 'five-months',
     name: '5 Months',
     duration: '5 months',

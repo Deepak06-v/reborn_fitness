@@ -33,6 +33,7 @@ async function sumCollectedInMonth(month: string): Promise<SumResult> {
     {
       $match: {
         'paymentEntries.voided': false,
+        'paymentEntries.method': { $ne: 'auto_registration' },
         'paymentEntries.paymentDate': { $gte: start, $lt: end },
       },
     },
@@ -175,6 +176,7 @@ async function monthlyTrend(month: string) {
       {
         $match: {
           'paymentEntries.voided': false,
+          'paymentEntries.method': { $ne: 'auto_registration' },
           'paymentEntries.paymentDate': { $gte: windowStart, $lt: windowEnd },
         },
       },

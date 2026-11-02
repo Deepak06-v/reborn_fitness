@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import { Member, type MemberDoc } from '../models/Member'
 import { MonthlyPayment, type MonthlyPaymentDoc } from '../models/MonthlyPayment'
 import { nextSequence } from '../models/Counter'
@@ -70,7 +71,15 @@ function computePeriodEnd(
  * bill already exists for the member's joining month it is returned untouched,
  * so retries and duplicate calls never double-bill.
  */
-export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPaymentDoc> {
+export interface CreateInitialPeriodOptions {
+  autoSettle?: boolean
+  adminId?: string
+}
+
+export async function createInitialPeriod(
+  member: MemberDoc,
+  options?: CreateInitialPeriodOptions,
+): Promise<MonthlyPaymentDoc> {
   const periodStart = member.joiningDate
   const billingMonth = currentMonth(periodStart)
   const existing = await MonthlyPayment.findOne({
@@ -85,6 +94,28 @@ export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPay
   const planInfo = planForMember(member)
   const anchorDay = istDayOfMonth(periodStart)
   const periodEnd = computePeriodEnd(periodStart, planInfo, anchorDay)
+
+  const autoSettle = options?.autoSettle ?? true
+  const adminId = options?.adminId
+
+  const autoPaymentEntries = autoSettle
+    ? [
+        {
+          amountPaise: planInfo.dueAmountPaise,
+          paymentDate: periodStart,
+          method: 'auto_registration' as const,
+          referenceNumber: 'AUTO-REG',
+          notes: 'First billing cycle auto-settled on registration',
+          recordedBy:
+            adminId && Types.ObjectId.isValid(adminId) ? new Types.ObjectId(adminId) : null,
+          recordedAt: new Date(),
+          voided: false,
+          voidedBy: null,
+          voidedAt: null,
+          voidReason: null,
+        },
+      ]
+    : []
 
   try {
     return await MonthlyPayment.create({
@@ -101,8 +132,10 @@ export async function createInitialPeriod(member: MemberDoc): Promise<MonthlyPay
       periodEnd,
       dueDate: periodStart,
       dueAmountPaise: planInfo.dueAmountPaise,
-      amountPaidPaise: 0,
-      status: 'unpaid',
+      amountPaidPaise: autoSettle ? planInfo.dueAmountPaise : 0,
+      status: autoSettle ? 'paid' : 'unpaid',
+      isAutoSettled: autoSettle,
+      paymentEntries: autoPaymentEntries,
     })
   } catch (error) {
     // A concurrent insert already created it — fall back to the stored record.
@@ -180,7 +213,7 @@ export async function reconcileMemberBilling(
     periodStart: -1,
     billingMonth: -1,
   })
-  if (!latest) latest = await createInitialPeriod(member)
+  if (!latest) latest = await createInitialPeriod(member, { autoSettle: false })
 
   let created = 0
   let cursorStart = periodStartOf(latest)
@@ -214,6 +247,8 @@ export async function reconcileMemberBilling(
           dueAmountPaise: planInfo.dueAmountPaise,
           amountPaidPaise: 0,
           status: 'unpaid',
+          isAutoSettled: false,
+          paymentEntries: [],
         })
         created += 1
       } catch (error) {

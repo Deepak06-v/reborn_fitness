@@ -1,6 +1,7 @@
 import type { Express } from 'express'
 import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { MonthlyPayment } from '../src/models/MonthlyPayment'
 import {
   clearDatabase,
   createAdmin,
@@ -30,6 +31,18 @@ async function addMember(overrides: Record<string, unknown> = {}) {
     })
     .expect(201)
   return response.body.member as { id: string; memberId: string }
+}
+
+async function addMemberWithUnpaidBill(overrides: Record<string, unknown> = {}) {
+  const member = await addMember(overrides)
+  const payments = await MonthlyPayment.find({ member: member.id })
+  if (payments.length > 0) {
+    await MonthlyPayment.updateOne(
+      { _id: payments[0]._id },
+      { $set: { amountPaidPaise: 0, status: 'unpaid', isAutoSettled: false, paymentEntries: [] } },
+    )
+  }
+  return member
 }
 
 async function memberPayments(id: string) {
@@ -93,10 +106,14 @@ describe('automatic period billing', () => {
     expect(istDayOf(jan.periodStart)).toBe('2026-01-15')
     expect(istDayOf(jan.periodEnd)).toBe('2026-02-15')
     expect(istDayOf(jan.dueDate)).toBe('2026-01-15')
-    // Creation never records payment: a past-due unpaid bill reads as overdue.
-    expect(jan.status).toBe('overdue')
-    expect(jan.dueState).toBe('overdue')
-    expect(jan.balancePaise).toBe(100000)
+    // First billing cycle is automatically settled as PAID upon registration.
+    expect(jan.status).toBe('paid')
+    expect(jan.dueState).toBe('paid')
+    expect(jan.balancePaise).toBe(0)
+    expect(jan.amountPaidPaise).toBe(100000)
+    expect(jan.isAutoSettled).toBe(true)
+    expect(jan.paymentEntries).toHaveLength(1)
+    expect(jan.paymentEntries[0].method).toBe('auto_registration')
   })
 
   it('creates each recurring period exactly once (idempotent)', async () => {
@@ -178,7 +195,7 @@ describe('automatic period billing', () => {
 
 describe('payment recording', () => {
   it('records a full payment and marks the bill paid', async () => {
-    const member = await addMember()
+    const member = await addMemberWithUnpaidBill()
     const bill = await findPayment(member.memberId, '2026-01')
     const updated = await record(bill.id, { amountPaise: bill.dueAmountPaise })
     expect(updated.status).toBe('paid')
@@ -189,7 +206,7 @@ describe('payment recording', () => {
 
   it('supports partial payments and multiple installments', async () => {
     // A future-due bill so the balance reads as "partial" rather than "overdue".
-    const member = await addMember({ joiningDate: istDay(20) })
+    const member = await addMemberWithUnpaidBill({ joiningDate: istDay(20) })
     const bill = await findPayment(member.memberId, istDay(20).slice(0, 7))
 
     const first = await record(bill.id, { amountPaise: 40000, paymentDate: istDay() })
@@ -207,7 +224,7 @@ describe('payment recording', () => {
   })
 
   it('rejects overpayments and non-positive amounts', async () => {
-    const member = await addMember()
+    const member = await addMemberWithUnpaidBill()
     const bill = await findPayment(member.memberId, '2026-01')
 
     await session.agent
@@ -224,9 +241,9 @@ describe('payment recording', () => {
   })
 
   it('colour-codes due state as unpaid, due_soon and overdue', async () => {
-    const unpaid = await addMember({ phone: '9000000101', joiningDate: istDay(10) })
-    const dueSoon = await addMember({ phone: '9000000102', joiningDate: istDay(5) })
-    const overdue = await addMember({ phone: '9000000103', joiningDate: istDay(-10) })
+    const unpaid = await addMemberWithUnpaidBill({ phone: '9000000101', joiningDate: istDay(10) })
+    const dueSoon = await addMemberWithUnpaidBill({ phone: '9000000102', joiningDate: istDay(5) })
+    const overdue = await addMemberWithUnpaidBill({ phone: '9000000103', joiningDate: istDay(-10) })
 
     const futureBill = await findPayment(unpaid.memberId, istDay(10).slice(0, 7))
     const soonBill = await findPayment(dueSoon.memberId, istDay(5).slice(0, 7))
@@ -239,7 +256,7 @@ describe('payment recording', () => {
   })
 
   it('records collections by payment date, not billing month', async () => {
-    const member = await addMember({ joiningDate: '2026-06-02' })
+    const member = await addMemberWithUnpaidBill({ joiningDate: '2026-06-02' })
     const bill = await findPayment(member.memberId, '2026-06')
     await record(bill.id, { amountPaise: 100000, paymentDate: '2026-07-05' })
 
@@ -257,7 +274,7 @@ describe('payment recording', () => {
 
 describe('payment corrections', () => {
   it('voids a mistaken entry, recomputes the balance and keeps history', async () => {
-    const member = await addMember({ joiningDate: istDay(-40) })
+    const member = await addMemberWithUnpaidBill({ joiningDate: istDay(-40) })
     const bill = await findPayment(member.memberId, istDay(-40).slice(0, 7))
     const recorded = await record(bill.id, { amountPaise: bill.dueAmountPaise })
     expect(recorded.status).toBe('paid')
@@ -288,7 +305,7 @@ describe('payment corrections', () => {
 
   it('forbids staff from voiding payment entries (403)', async () => {
     await createAdmin('staff_pay', 'staff-pass-123', 'staff')
-    const member = await addMember({ joiningDate: istDay(-30) })
+    const member = await addMemberWithUnpaidBill({ joiningDate: istDay(-30) })
     const bill = await findPayment(member.memberId, istDay(-30).slice(0, 7))
     const recorded = await record(bill.id, { amountPaise: 50000 })
     const entryId = (recorded.paymentEntries as { id: string }[])[0].id
@@ -309,7 +326,7 @@ describe('payment corrections', () => {
   it('forbids admin (Staff) role from voiding payment entries (403)', async () => {
     // KEY TEST: 'admin' role must be Staff, not Owner. Before the fix, 'admin' could void payments.
     await createAdmin('admin_pay', 'admin-pass-123', 'admin')
-    const member = await addMember({ joiningDate: istDay(-30) })
+    const member = await addMemberWithUnpaidBill({ joiningDate: istDay(-30) })
     const bill = await findPayment(member.memberId, istDay(-30).slice(0, 7))
     const recorded = await record(bill.id, { amountPaise: 50000 })
     const entryId = (recorded.paymentEntries as { id: string }[])[0].id
@@ -447,7 +464,7 @@ describe('new membership plans (Monthly-1500, Monthly-2000, 15days-500)', () => 
 
   it('supports partial and full payments and overdue state for 15-day plans', async () => {
     // 1. Past-due bill: partial payment keeps status 'overdue' with reduced balance
-    const overdueMember = await addMember({
+    const overdueMember = await addMemberWithUnpaidBill({
       phone: '9876500001',
       joiningDate: istDay(-20),
       planId: '15days-500',
@@ -467,7 +484,7 @@ describe('new membership plans (Monthly-1500, Monthly-2000, 15days-500)', () => 
     expect(paidOverdue.status).toBe('paid')
 
     // 2. Future-due bill: partial payment sets status 'partial'
-    const futureMember = await addMember({
+    const futureMember = await addMemberWithUnpaidBill({
       phone: '9876500002',
       joiningDate: istDay(5),
       planId: '15days-500',

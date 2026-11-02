@@ -24,6 +24,7 @@ const planDurationMonthsMap: Record<string, number> = {
   'two-months': 2,
   'three-months': 3,
   'four-months': 4,
+  '4months-5000': 4,
   'five-months': 5,
   'six-months': 6,
   'seven-months': 7,

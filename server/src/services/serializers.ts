@@ -61,7 +61,11 @@ export function serializeEntry(entry: PaymentEntry, adminNames?: Map<string, str
     referenceNumber: entry.referenceNumber,
     notes: entry.notes,
     recordedBy,
-    recordedByName: recordedBy ? adminNames?.get(recordedBy) ?? null : null,
+    recordedByName: recordedBy
+      ? adminNames?.get(recordedBy) ?? (entry.method === 'auto_registration' ? 'System (Auto-registration)' : null)
+      : entry.method === 'auto_registration'
+        ? 'System (Auto-registration)'
+        : null,
     recordedAt: entry.recordedAt.toISOString(),
     voided: entry.voided,
     voidedBy,
@@ -109,6 +113,7 @@ export function serializePayment(
     statusLabel: evalResult.label,
     daysLeft: evalResult.daysLeft,
     sortGroup: evalResult.sortGroup,
+    isAutoSettled: Boolean(payment.isAutoSettled),
     paymentEntries: payment.paymentEntries.map((entry) => serializeEntry(entry, adminNames)),
     createdAt: payment.createdAt.toISOString(),
     updatedAt: payment.updatedAt.toISOString(),

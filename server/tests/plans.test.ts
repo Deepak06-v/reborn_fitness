@@ -43,6 +43,11 @@ describe('membership plan catalogue', () => {
     expect(ids).toContain('15days-500')
     expect(ids).toContain('two-months')
     expect(ids).toContain('fifteen-months')
+    expect(ids).toContain('4months-5000')
+
+    const fourMonths5000 = response.body.plans.find((p: { id: string }) => p.id === '4months-5000')
+    expect(fourMonths5000.pricePaise).toBe(500000)
+    expect(fourMonths5000.durationMonths).toBe(4)
 
     const monthly1500 = response.body.plans.find((p: { id: string }) => p.id === 'monthly-1500')
     expect(monthly1500.pricePaise).toBe(150000)
