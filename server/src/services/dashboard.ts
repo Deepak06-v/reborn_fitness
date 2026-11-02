@@ -1,6 +1,7 @@
 import { Member } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
 import {
+  addDays,
   istDayStart,
   lastNMonths,
   monthEndExclusive,
@@ -71,6 +72,32 @@ async function sumOverdue(month: string, now: Date): Promise<SumResult> {
           $and: [
             { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
             { $lt: [targetEnd, todayStart] },
+          ],
+        },
+      },
+    },
+    {
+      $project: { balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] } },
+    },
+    { $match: { balance: { $gt: 0 } } },
+    { $group: { _id: null, total: { $sum: '$balance' }, count: { $sum: 1 } } },
+  ])
+  return result[0] ?? { _id: null, total: 0, count: 0 }
+}
+
+async function sumDueToday(month: string, now: Date): Promise<SumResult> {
+  const todayStart = istDayStart(now)
+  const tomorrowStart = addDays(now, 1)
+  const targetEnd = '$dueDate'
+  const result = await MonthlyPayment.aggregate<SumResult>([
+    {
+      $match: {
+        billingMonth: { $lte: month },
+        $expr: {
+          $and: [
+            { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+            { $gte: [targetEnd, todayStart] },
+            { $lt: [targetEnd, tomorrowStart] },
           ],
         },
       },
@@ -214,9 +241,26 @@ async function monthlyTrend(month: string) {
   })
 }
 
-async function overdueMembers(month: string, now: Date) {
+export interface FollowUpMember {
+  id: string
+  memberId: string
+  fullName: string
+  phone: string
+  planName: string
+  balancePaise: number
+  balance: number
+  months: number
+  oldestDue: string
+  dueDate: string
+  paymentId: string
+  status: 'overdue' | 'due_today'
+  statusLabel: 'Overdue' | 'Due Today'
+}
+
+export async function getFollowUpMembers(month: string, now: Date): Promise<FollowUpMember[]> {
   const todayStart = istDayStart(now)
-  const targetEnd = '$dueDate'
+  const tomorrowStart = addDays(now, 1)
+
   const rows = await MonthlyPayment.aggregate([
     {
       $match: {
@@ -224,7 +268,7 @@ async function overdueMembers(month: string, now: Date) {
         $expr: {
           $and: [
             { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
-            { $lt: [targetEnd, todayStart] },
+            { $lt: ['$dueDate', tomorrowStart] },
           ],
         },
       },
@@ -235,19 +279,26 @@ async function overdueMembers(month: string, now: Date) {
         balance: { $subtract: ['$dueAmountPaise', '$amountPaidPaise'] },
         effectiveDue: '$dueDate',
         billingMonth: 1,
+        planName: 1,
       },
     },
     { $match: { balance: { $gt: 0 } } },
+    { $sort: { effectiveDue: 1, _id: 1 } },
     {
       $group: {
         _id: '$member',
         balance: { $sum: '$balance' },
         months: { $sum: 1 },
-        oldestDue: { $min: '$effectiveDue' },
+        oldestDue: { $first: '$effectiveDue' },
+        planName: { $first: '$planName' },
+        paymentId: { $first: '$_id' },
+        hasOverdue: {
+          $max: {
+            $cond: [{ $lt: ['$effectiveDue', todayStart] }, 1, 0],
+          },
+        },
       },
     },
-    { $sort: { balance: -1 } },
-    { $limit: 10 },
     {
       $lookup: { from: 'members', localField: '_id', foreignField: '_id', as: 'memberDoc' },
     },
@@ -255,26 +306,43 @@ async function overdueMembers(month: string, now: Date) {
     {
       $project: {
         _id: 0,
+        id: { $toString: '$_id' },
         memberId: { $toString: '$_id' },
         memberRef: '$memberDoc.memberId',
         fullName: '$memberDoc.fullName',
         phone: '$memberDoc.phone',
-        balance: 1,
+        planName: { $ifNull: ['$planName', '$memberDoc.planName'] },
+        balancePaise: '$balance',
         months: 1,
         oldestDue: 1,
+        paymentId: { $toString: '$paymentId' },
+        hasOverdue: 1,
       },
     },
+    { $sort: { hasOverdue: -1, balancePaise: -1, oldestDue: 1 } },
   ])
-  return rows.map((row) => ({
-    id: row.memberId as string,
-    memberId: row.memberRef as string,
-    fullName: (row.fullName as string) ?? 'Unknown member',
-    phone: row.phone as string,
-    balancePaise: row.balance as number,
-    balance: paiseToRupees(row.balance as number),
-    months: row.months as number,
-    oldestDue: (row.oldestDue as Date).toISOString(),
-  }))
+
+  return rows.map((row) => {
+    const isOverdue = row.hasOverdue === 1
+    const status: 'overdue' | 'due_today' = isOverdue ? 'overdue' : 'due_today'
+    const statusLabel: 'Overdue' | 'Due Today' = isOverdue ? 'Overdue' : 'Due Today'
+    const oldestDueIso = (row.oldestDue as Date).toISOString()
+    return {
+      id: row.id as string,
+      memberId: (row.memberRef as string) ?? (row.memberId as string),
+      fullName: (row.fullName as string) ?? 'Unknown member',
+      phone: (row.phone as string) ?? '',
+      planName: (row.planName as string) ?? 'Membership',
+      balancePaise: row.balancePaise as number,
+      balance: paiseToRupees(row.balancePaise as number),
+      months: row.months as number,
+      oldestDue: oldestDueIso,
+      dueDate: oldestDueIso,
+      paymentId: row.paymentId as string,
+      status,
+      statusLabel,
+    }
+  })
 }
 
 export async function getDashboard(month: string) {
@@ -289,11 +357,12 @@ export async function getDashboard(month: string) {
     collected,
     outstanding,
     overdue,
+    dueToday,
     statusOverview,
     recent,
     payments,
     trend,
-    overdueList,
+    followUpList,
   ] = await Promise.all([
     Member.countDocuments({ status: 'active' }),
     Member.countDocuments({ joiningDate: { $gte: start, $lt: end } }),
@@ -301,12 +370,16 @@ export async function getDashboard(month: string) {
     sumCollectedInMonth(month),
     sumOutstandingForMonth(month),
     sumOverdue(month, now),
+    sumDueToday(month, now),
     monthStatusOverview(month, now),
     Member.find().sort({ createdAt: -1 }).limit(5),
     recentPayments(8),
     monthlyTrend(month),
-    overdueMembers(month, now),
+    getFollowUpMembers(month, now),
   ])
+
+  const overdueList = followUpList.filter((m) => m.status === 'overdue')
+  const dueTodayList = followUpList.filter((m) => m.status === 'due_today')
 
   return {
     month,
@@ -325,11 +398,21 @@ export async function getDashboard(month: string) {
       overduePaymentsPaise: overdue.total,
       overduePayments: paiseToRupees(overdue.total),
       overdueCount: overdue.count,
+      dueTodayPaymentsPaise: dueToday.total,
+      dueTodayPayments: paiseToRupees(dueToday.total),
+      dueTodayCount: dueToday.count,
     },
     statusOverview,
     recentMembers: recent.map((member) => serializeMember(member)),
     recentPayments: payments,
     monthlyTrend: trend,
     overdueMembers: overdueList,
+    dueTodayMembers: dueTodayList,
+    paymentFollowUp: followUpList,
+    followUpCounts: {
+      overdue: overdueList.length,
+      dueToday: dueTodayList.length,
+      total: followUpList.length,
+    },
   }
 }

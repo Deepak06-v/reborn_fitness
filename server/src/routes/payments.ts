@@ -3,6 +3,7 @@ import type { z } from 'zod'
 import { validate } from '../middleware/validate'
 import { requireOwner } from '../middleware/auth'
 import {
+  bulkRecordPaymentsSchema,
   correctionSchema,
   listPaymentsQuerySchema,
   paymentIdParamSchema,
@@ -11,6 +12,7 @@ import {
 import { asyncHandler } from '../utils/errors'
 import { istDay } from '../utils/month'
 import {
+  bulkRecordPayments,
   correctPayment,
   getPaymentDetail,
   getPaymentsForExport,
@@ -97,6 +99,24 @@ router.get(
   validate({ query: listPaymentsQuerySchema }),
   asyncHandler(async (req, res) => {
     res.json(await listPayments(req.query as unknown as ListPaymentsParams))
+  }),
+)
+
+router.post(
+  '/bulk-record',
+  validate({ body: bulkRecordPaymentsSchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as z.infer<typeof bulkRecordPaymentsSchema>
+    const adminId = (req.admin as NonNullable<typeof req.admin>)._id.toString()
+    const result = await bulkRecordPayments({
+      operationId: body.operationId,
+      memberIds: body.memberIds,
+      method: body.method,
+      paymentDate: body.paymentDate,
+      notes: body.notes,
+      adminId,
+    })
+    res.json(result)
   }),
 )
 

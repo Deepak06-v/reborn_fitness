@@ -12,6 +12,7 @@ export interface PaymentEntry {
   notes: string | null
   recordedBy: Types.ObjectId | null
   recordedAt: Date
+  idempotencyKey?: string | null
   voided: boolean
   voidedBy: Types.ObjectId | null
   voidedAt: Date | null
@@ -71,6 +72,7 @@ const paymentEntrySchema = new Schema<PaymentEntry>(
     notes: { type: String, default: null, trim: true, maxlength: 1000 },
     recordedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
     recordedAt: { type: Date, default: () => new Date() },
+    idempotencyKey: { type: String, default: null, trim: true, maxlength: 200 },
     voided: { type: Boolean, default: false },
     voidedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
     voidedAt: { type: Date, default: null },

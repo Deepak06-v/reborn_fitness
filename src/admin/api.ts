@@ -1,5 +1,6 @@
 import type {
   AdminUser,
+  BulkRecordResponse,
   DashboardResponse,
   Member,
   MemberDetailResponse,
@@ -200,6 +201,12 @@ export const adminApi = {
     },
     get(id: string): Promise<PaymentDetailResponse> {
       return request<PaymentDetailResponse>(`/payments/${id}`)
+    },
+    bulkRecord(body: { memberIds: string[]; operationId?: string }): Promise<BulkRecordResponse> {
+      return request<BulkRecordResponse>('/payments/bulk-record', {
+        method: 'POST',
+        body,
+      })
     },
     recordEntry(
       id: string,

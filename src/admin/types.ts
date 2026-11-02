@@ -183,6 +183,70 @@ export interface RecentPayment {
   billingMonth: string
 }
 
+export type FollowUpStatus = 'overdue' | 'due_today'
+
+export interface PaymentFollowUpItem {
+  id: string
+  memberId: string
+  fullName: string
+  phone: string
+  planName: string
+  balancePaise: number
+  balance: number
+  months: number
+  oldestDue: string
+  dueDate: string
+  paymentId: string
+  status: FollowUpStatus
+  statusLabel: 'Overdue' | 'Due Today'
+}
+
+export interface BulkRecordResultItem {
+  memberId: string
+  memberRef?: string
+  memberName?: string
+  success: boolean
+  paymentId?: string
+  invoiceNumber?: string | null
+  amountPaise?: number
+  amount?: number
+  error?: string
+}
+
+export interface BulkRecordTargetResult {
+  paymentId: string
+  billingMonth: string
+  dueDate: string
+  invoiceNumber: string | null
+  amountPaise: number
+  amount: number
+  status: 'success' | 'failed' | 'already_paid'
+  error?: string | null
+}
+
+export interface MemberBulkResult {
+  memberId: string
+  memberRef: string
+  memberName: string
+  totalRecords: number
+  processedRecords: number
+  totalAmountPaise: number
+  totalAmount: number
+  success: boolean
+  records: BulkRecordTargetResult[]
+}
+
+export interface BulkRecordResponse {
+  operationId?: string
+  total: number
+  successfulCount: number
+  failedCount: number
+  totalAmountPaise?: number
+  totalAmount?: number
+  memberResults?: MemberBulkResult[]
+  results: BulkRecordResultItem[]
+}
+
 export interface OverdueMember {
   id: string
   memberId: string
@@ -192,6 +256,11 @@ export interface OverdueMember {
   balance: number
   months: number
   oldestDue: string
+  dueDate?: string
+  planName?: string
+  paymentId?: string
+  status?: FollowUpStatus
+  statusLabel?: string
 }
 
 export interface MonthlyTrendPoint {
@@ -221,12 +290,22 @@ export interface DashboardResponse {
     overduePaymentsPaise: number
     overduePayments: number
     overdueCount: number
+    dueTodayPaymentsPaise?: number
+    dueTodayPayments?: number
+    dueTodayCount?: number
   }
   statusOverview: Record<PaymentStatus, number>
   recentMembers: Member[]
   recentPayments: RecentPayment[]
   monthlyTrend: MonthlyTrendPoint[]
-  overdueMembers: OverdueMember[]
+  overdueMembers: (OverdueMember | PaymentFollowUpItem)[]
+  dueTodayMembers?: PaymentFollowUpItem[]
+  paymentFollowUp?: PaymentFollowUpItem[]
+  followUpCounts?: {
+    overdue: number
+    dueToday: number
+    total: number
+  }
 }
 
 export type WhatsAppDeliveryStatus =

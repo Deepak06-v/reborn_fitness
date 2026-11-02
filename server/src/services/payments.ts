@@ -1,10 +1,11 @@
 import { Types, type FilterQuery, type PipelineStage } from 'mongoose'
 import { Admin } from '../models/Admin'
-import { Member } from '../models/Member'
+import { BulkPaymentOperation, type PlannedPaymentTarget } from '../models/BulkPaymentOperation'
+import { Member, type MemberDoc } from '../models/Member'
 import { MonthlyPayment, type MonthlyPaymentDoc, type PaymentMethod } from '../models/MonthlyPayment'
 import { ApiError } from '../utils/errors'
 import { paiseToRupees } from '../utils/money'
-import { formatDDMMYYYY, istDayStart } from '../utils/month'
+import { addDays, formatDDMMYYYY, istDayStart } from '../utils/month'
 import {
   deriveBaseStatus,
   evaluatePaymentStatus,
@@ -294,6 +295,7 @@ export interface RecordPaymentInput {
   referenceNumber?: string | null
   notes?: string | null
   adminId: string
+  idempotencyKey?: string | null
 }
 
 export async function recordPayment(
@@ -309,6 +311,16 @@ export async function recordPayment(
     const payment = await MonthlyPayment.findById(input.paymentId)
     if (!payment) throw ApiError.notFound('Billing record not found')
 
+    // If an idempotencyKey was provided and this bill already contains that entry, return idempotently.
+    if (input.idempotencyKey) {
+      const existing = payment.paymentEntries.find(
+        (e) => e.idempotencyKey === input.idempotencyKey && !e.voided,
+      )
+      if (existing) {
+        return payment
+      }
+    }
+
     const balance = outstandingBalance(payment.dueAmountPaise, payment.amountPaidPaise)
     if (balance <= 0) throw ApiError.conflict('This bill is already fully paid')
     if (input.amountPaise <= 0) {
@@ -321,8 +333,16 @@ export async function recordPayment(
     }
 
     const newPaid = payment.amountPaidPaise + input.amountPaise
+    const updateMatch: Record<string, unknown> = {
+      _id: payment._id,
+      amountPaidPaise: payment.amountPaidPaise,
+    }
+    if (input.idempotencyKey) {
+      updateMatch['paymentEntries.idempotencyKey'] = { $ne: input.idempotencyKey }
+    }
+
     const result = await MonthlyPayment.updateOne(
-      { _id: payment._id, amountPaidPaise: payment.amountPaidPaise },
+      updateMatch,
       {
         $push: {
           paymentEntries: {
@@ -333,6 +353,7 @@ export async function recordPayment(
             notes: input.notes ?? null,
             recordedBy: new Types.ObjectId(input.adminId),
             recordedAt: new Date(),
+            idempotencyKey: input.idempotencyKey ?? null,
             voided: false,
             voidedBy: null,
             voidedAt: null,
@@ -354,6 +375,326 @@ export async function recordPayment(
   }
 
   throw ApiError.conflict('The billing record changed concurrently. Please retry.')
+}
+
+export interface BulkRecordPaymentsInput {
+  operationId?: string
+  memberIds: string[]
+  method?: PaymentMethod
+  paymentDate?: Date
+  notes?: string | null
+  adminId: string
+}
+
+export interface BulkRecordTargetResult {
+  paymentId: string
+  billingMonth: string
+  dueDate: string
+  invoiceNumber: string | null
+  amountPaise: number
+  amount: number
+  status: 'success' | 'failed' | 'already_paid'
+  error?: string | null
+}
+
+export interface MemberBulkResult {
+  memberId: string
+  memberRef: string
+  memberName: string
+  totalRecords: number
+  processedRecords: number
+  totalAmountPaise: number
+  totalAmount: number
+  success: boolean
+  records: BulkRecordTargetResult[]
+}
+
+export interface BulkRecordResultItem {
+  memberId: string
+  memberRef?: string
+  memberName?: string
+  success: boolean
+  paymentId?: string
+  invoiceNumber?: string | null
+  amountPaise?: number
+  amount?: number
+  error?: string
+}
+
+export interface BulkRecordResult {
+  operationId: string
+  total: number
+  successfulCount: number
+  failedCount: number
+  totalAmountPaise: number
+  totalAmount: number
+  memberResults: MemberBulkResult[]
+  results: BulkRecordResultItem[]
+}
+
+export async function bulkRecordPayments(
+  input: BulkRecordPaymentsInput,
+): Promise<BulkRecordResult> {
+  const uniqueMemberIds = Array.from(new Set(input.memberIds.filter(Boolean)))
+  const now = input.paymentDate ?? new Date()
+  const tomorrowStart = addDays(now, 1)
+  const method: PaymentMethod = input.method ?? 'cash'
+  const operationId =
+    input.operationId?.trim() || `bulk_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+
+  let operation = await BulkPaymentOperation.findOne({ operationId })
+
+  // 1. Immutable snapshot creation if operation is new
+  if (!operation) {
+    const plannedTargets: PlannedPaymentTarget[] = []
+
+    for (const id of uniqueMemberIds) {
+      let member: MemberDoc | null = null
+      if (Types.ObjectId.isValid(id)) {
+        member = await Member.findById(id)
+      }
+      if (!member) {
+        member = await Member.findOne({ memberId: id })
+      }
+      if (!member && Types.ObjectId.isValid(id)) {
+        const paymentDoc = await MonthlyPayment.findById(id)
+        if (paymentDoc) {
+          member = await Member.findById(paymentDoc.member)
+        }
+      }
+
+      if (!member) continue
+
+      // Retrieve ALL outstanding overdue and due-today bills for this member in chronological order
+      const bills = await MonthlyPayment.find({
+        member: member._id,
+        $expr: { $lt: ['$amountPaidPaise', '$dueAmountPaise'] },
+        dueDate: { $lt: tomorrowStart },
+      }).sort({ dueDate: 1, periodStart: 1 })
+
+      for (const bill of bills) {
+        const balance = outstandingBalance(bill.dueAmountPaise, bill.amountPaidPaise)
+        if (balance > 0) {
+          plannedTargets.push({
+            memberId: member._id.toString(),
+            memberRef: member.memberId,
+            memberName: member.fullName,
+            paymentId: bill._id.toString(),
+            invoiceNumber: bill.invoiceNumber,
+            billingMonth: bill.billingMonth,
+            dueDate: bill.dueDate,
+            plannedAmountPaise: balance,
+            status: 'pending',
+            error: null,
+            executedAt: null,
+          })
+        }
+      }
+    }
+
+    const totalPlanned = plannedTargets.reduce((acc, t) => acc + t.plannedAmountPaise, 0)
+
+    try {
+      operation = await BulkPaymentOperation.create({
+        operationId,
+        adminId: new Types.ObjectId(input.adminId),
+        selectedMemberIds: uniqueMemberIds,
+        targets: plannedTargets,
+        method,
+        paymentDate: now,
+        totalPlannedAmountPaise: totalPlanned,
+        status: 'pending',
+      })
+    } catch (err) {
+      operation = await BulkPaymentOperation.findOne({ operationId })
+      if (!operation) throw err
+    }
+  }
+
+  // 2. Process all planned targets in the immutable snapshot
+  for (const target of operation.targets) {
+    if (target.status === 'success') continue
+
+    const idempotencyKey = `${operation.operationId}_${target.paymentId}`
+
+    try {
+      const bill = await MonthlyPayment.findById(target.paymentId)
+      if (!bill) {
+        target.status = 'failed'
+        target.error = 'Billing record not found'
+        continue
+      }
+
+      // Check if bill already contains this payment entry (e.g. server crashed after writing entry)
+      const existingEntry = bill.paymentEntries.find(
+        (e) => e.idempotencyKey === idempotencyKey && !e.voided,
+      )
+      if (existingEntry) {
+        target.status = 'success'
+        target.executedAt = existingEntry.recordedAt
+        target.error = null
+        target.invoiceNumber = bill.invoiceNumber
+        continue
+      }
+
+      const currentBalance = outstandingBalance(bill.dueAmountPaise, bill.amountPaidPaise)
+      if (currentBalance <= 0) {
+        target.status = 'already_paid'
+        target.error = 'Bill was already fully paid'
+        continue
+      }
+
+      const amountToPay = Math.min(target.plannedAmountPaise, currentBalance)
+      const updated = await recordPayment({
+        paymentId: target.paymentId,
+        amountPaise: amountToPay,
+        paymentDate: operation.paymentDate,
+        method: operation.method,
+        referenceNumber: null,
+        notes: input.notes ?? 'Bulk payment recorded via dashboard',
+        adminId: input.adminId,
+        idempotencyKey,
+      })
+
+      target.status = 'success'
+      target.executedAt = new Date()
+      target.error = null
+      target.invoiceNumber = updated.invoiceNumber
+
+      if (updated.periodEnd) {
+        await Member.updateOne(
+          {
+            _id: updated.member,
+            $or: [{ nextBillingDate: { $lt: updated.periodEnd } }, { nextBillingDate: null }],
+          },
+          { $set: { nextBillingDate: updated.periodEnd } },
+        )
+      }
+    } catch (err) {
+      target.status = 'failed'
+      target.error = err instanceof Error ? err.message : 'Payment recording failed'
+    }
+  }
+
+  const allSuccess = operation.targets.every(
+    (t) => t.status === 'success' || t.status === 'already_paid',
+  )
+  const anySuccess = operation.targets.some(
+    (t) => t.status === 'success' || t.status === 'already_paid',
+  )
+  operation.status = allSuccess ? 'completed' : anySuccess ? 'partial_failure' : 'failed'
+  await operation.save()
+
+  // 3. Build structured per-member results and backward-compatible flat results
+  const memberMap = new Map<string, MemberBulkResult>()
+  for (const id of uniqueMemberIds) {
+    memberMap.set(id, {
+      memberId: id,
+      memberRef: '',
+      memberName: '',
+      totalRecords: 0,
+      processedRecords: 0,
+      totalAmountPaise: 0,
+      totalAmount: 0,
+      success: false,
+      records: [],
+    })
+  }
+
+  let totalCollectedPaise = 0
+  const flatResults: BulkRecordResultItem[] = []
+
+  for (const target of operation.targets) {
+    let m = memberMap.get(target.memberId)
+    if (!m) {
+      m = {
+        memberId: target.memberId,
+        memberRef: target.memberRef,
+        memberName: target.memberName,
+        totalRecords: 0,
+        processedRecords: 0,
+        totalAmountPaise: 0,
+        totalAmount: 0,
+        success: false,
+        records: [],
+      }
+      memberMap.set(target.memberId, m)
+    }
+
+    m.memberRef = target.memberRef
+    m.memberName = target.memberName
+    m.totalRecords += 1
+
+    const isSuccess = target.status === 'success' || target.status === 'already_paid'
+    if (isSuccess) {
+      m.processedRecords += 1
+      if (target.status === 'success') {
+        m.totalAmountPaise += target.plannedAmountPaise
+        m.totalAmount = paiseToRupees(m.totalAmountPaise)
+        totalCollectedPaise += target.plannedAmountPaise
+      }
+    }
+
+    m.records.push({
+      paymentId: target.paymentId,
+      billingMonth: target.billingMonth,
+      dueDate: (target.dueDate as Date).toISOString(),
+      invoiceNumber: target.invoiceNumber,
+      amountPaise: target.plannedAmountPaise,
+      amount: paiseToRupees(target.plannedAmountPaise),
+      status: target.status === 'success' ? 'success' : target.status === 'already_paid' ? 'already_paid' : 'failed',
+      error: target.error,
+    })
+  }
+
+  // Populate per-member final status & flat results
+  for (const [id, m] of memberMap.entries()) {
+    if (m.totalRecords === 0) {
+      m.success = false
+      let memberExists = false
+      if (Types.ObjectId.isValid(id)) {
+        memberExists = Boolean(await Member.findById(id).select('_id'))
+      }
+      if (!memberExists) {
+        memberExists = Boolean(await Member.findOne({ memberId: id }).select('_id'))
+      }
+
+      flatResults.push({
+        memberId: id,
+        memberRef: m.memberRef || id,
+        memberName: m.memberName || (memberExists ? id : 'Unknown member'),
+        success: false,
+        error: memberExists ? 'Member has no overdue or due-today bills' : 'Member not found',
+      })
+    } else {
+      m.success = m.processedRecords === m.totalRecords
+      flatResults.push({
+        memberId: id,
+        memberRef: m.memberRef,
+        memberName: m.memberName,
+        success: m.success,
+        paymentId: m.records[0]?.paymentId,
+        invoiceNumber: m.records[0]?.invoiceNumber ?? null,
+        amountPaise: m.totalAmountPaise,
+        amount: paiseToRupees(m.totalAmountPaise),
+        error: m.success ? undefined : `${m.totalRecords - m.processedRecords} of ${m.totalRecords} bills failed`,
+      })
+    }
+  }
+
+  const successfulMembers = Array.from(memberMap.values()).filter((m) => m.success).length
+  const failedMembers = Array.from(memberMap.values()).filter((m) => !m.success).length
+
+  return {
+    operationId: operation.operationId,
+    total: uniqueMemberIds.length,
+    successfulCount: successfulMembers,
+    failedCount: failedMembers,
+    totalAmountPaise: totalCollectedPaise,
+    totalAmount: paiseToRupees(totalCollectedPaise),
+    memberResults: Array.from(memberMap.values()),
+    results: flatResults,
+  }
 }
 
 export interface CorrectPaymentInput {

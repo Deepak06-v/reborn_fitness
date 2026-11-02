@@ -46,3 +46,14 @@ export const correctionSchema = z.object({
 })
 
 export const paymentIdParamSchema = z.object({ id: z.string().min(1) })
+
+export const bulkRecordPaymentsSchema = z.object({
+  operationId: z.string().trim().min(1).max(120).optional(),
+  memberIds: z.array(z.string().min(1)).min(1, 'Select at least one member'),
+  method: z.enum(paymentMethods).optional(),
+  paymentDate: z.coerce.date().optional(),
+  notes: z
+    .union([z.string().trim().max(1000), z.literal(''), z.null()])
+    .optional()
+    .transform((value) => (value === '' || value === undefined ? null : value)),
+})
