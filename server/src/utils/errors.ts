@@ -88,6 +88,16 @@ export function errorHandler(
 
   const maybeMongo = error as { code?: number; keyValue?: Record<string, unknown> }
   if (maybeMongo && maybeMongo.code === 11000) {
+    if (maybeMongo.keyValue && 'phone' in maybeMongo.keyValue) {
+      res.status(409).json({
+        error: {
+          code: 'duplicate_member',
+          message: 'A member with this phone number already exists.',
+          details: maybeMongo.keyValue,
+        },
+      })
+      return
+    }
     res.status(409).json({
       error: {
         code: 'conflict',

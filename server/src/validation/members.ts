@@ -68,3 +68,8 @@ export const listMembersQuerySchema = z.object({
 export const memberIdParamSchema = z.object({
   id: z.string().min(1),
 })
+
+export const checkPhoneQuerySchema = z.object({
+  phone: z.string().trim().min(1, 'Phone number is required'),
+  excludeMemberId: z.string().trim().optional(),
+})

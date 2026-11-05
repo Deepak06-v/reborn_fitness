@@ -1,5 +1,5 @@
 import { Types, type FilterQuery, type SortOrder } from 'mongoose'
-import { Member, type MemberDoc } from '../models/Member'
+import { Member, type MemberDoc, type MemberStatus } from '../models/Member'
 import { MonthlyPayment } from '../models/MonthlyPayment'
 import { getPlan } from '../config/plans'
 import { ApiError } from '../utils/errors'
@@ -57,12 +57,72 @@ function sortSpec(sort?: string): Record<string, SortOrder> {
   }
 }
 
+export interface PhoneAvailabilityResult {
+  exists: boolean
+  normalizedPhone?: string
+  member?: {
+    memberId: string
+    fullName: string
+    status: MemberStatus
+  }
+}
+
+export async function checkPhoneAvailability(
+  phoneInput: string,
+  excludeMemberId?: string,
+): Promise<PhoneAvailabilityResult> {
+  const normalized = normalizePhone(phoneInput)
+  if (!isValidPhone(normalized)) {
+    throw ApiError.unprocessable('Phone number must contain exactly 10 digits', [
+      { path: 'phone', message: 'Invalid phone number' },
+    ])
+  }
+
+  const query: FilterQuery<MemberDoc> = { phone: normalized }
+  if (excludeMemberId && Types.ObjectId.isValid(excludeMemberId)) {
+    query._id = { $ne: new Types.ObjectId(excludeMemberId) }
+  }
+
+  const existing = await Member.findOne(query).select('memberId fullName status')
+  if (existing) {
+    return {
+      exists: true,
+      normalizedPhone: normalized,
+      member: {
+        memberId: existing.memberId,
+        fullName: existing.fullName,
+        status: existing.status,
+      },
+    }
+  }
+
+  return {
+    exists: false,
+    normalizedPhone: normalized,
+  }
+}
+
 export async function createMember(input: MemberInput, adminId?: string): Promise<MemberDoc> {
   const phone = normalizePhone(input.phone)
   if (!isValidPhone(phone)) {
     throw ApiError.unprocessable('Phone number must contain exactly 10 digits', [
       { path: 'phone', message: 'Invalid phone number' },
     ])
+  }
+
+  // Pre-check for duplicate phone across all members (active, inactive, archived)
+  const existing = await Member.findOne({ phone }).select('memberId fullName status')
+  if (existing) {
+    throw new ApiError(
+      409,
+      'A member with this phone number already exists.',
+      'duplicate_member',
+      {
+        memberId: existing.memberId,
+        fullName: existing.fullName,
+        status: existing.status,
+      },
+    )
   }
 
   const plan = getPlan(input.planId)
@@ -73,7 +133,9 @@ export async function createMember(input: MemberInput, adminId?: string): Promis
   }
 
   const memberId = await Member.generateMemberId()
-  const member = await Member.create({
+  let member: MemberDoc
+  try {
+    member = await Member.create({
     memberId,
     fullName: input.fullName.trim(),
     phone,
@@ -91,6 +153,28 @@ export async function createMember(input: MemberInput, adminId?: string): Promis
     monthlyFeePaise: plan.pricePaise,
     status: 'active',
   })
+  } catch (err: any) {
+    if (
+      err &&
+      (err.code === 11000 || err.name === 'MongoServerError') &&
+      (err.keyPattern?.phone || err.keyValue?.phone)
+    ) {
+      const raceExisting = await Member.findOne({ phone }).select('memberId fullName status')
+      throw new ApiError(
+        409,
+        'A member with this phone number already exists.',
+        'duplicate_member',
+        raceExisting
+          ? {
+              memberId: raceExisting.memberId,
+              fullName: raceExisting.fullName,
+              status: raceExisting.status,
+            }
+          : { phone },
+      )
+    }
+    throw err
+  }
 
   try {
     const period = await createInitialPeriod(member, { autoSettle: true, adminId })
@@ -125,7 +209,24 @@ export async function updateMember(
         { path: 'phone', message: 'Invalid phone number' },
       ])
     }
-    member.phone = phone
+    if (phone !== member.phone) {
+      const existing = await Member.findOne({ phone, _id: { $ne: member._id } }).select(
+        'memberId fullName status',
+      )
+      if (existing) {
+        throw new ApiError(
+          409,
+          'A member with this phone number already exists.',
+          'duplicate_member',
+          {
+            memberId: existing.memberId,
+            fullName: existing.fullName,
+            status: existing.status,
+          },
+        )
+      }
+      member.phone = phone
+    }
   }
   if (patch.fullName !== undefined) member.fullName = patch.fullName.trim()
   if (patch.email !== undefined) member.email = patch.email?.trim() || null
@@ -158,7 +259,33 @@ export async function updateMember(
   }
   if (patch.status !== undefined) member.status = patch.status
 
-  await member.save()
+  try {
+    await member.save()
+  } catch (err: any) {
+    if (
+      err &&
+      (err.code === 11000 || err.name === 'MongoServerError') &&
+      (err.keyPattern?.phone || err.keyValue?.phone)
+    ) {
+      const raceExisting = await Member.findOne({
+        phone: member.phone,
+        _id: { $ne: member._id },
+      }).select('memberId fullName status')
+      throw new ApiError(
+        409,
+        'A member with this phone number already exists.',
+        'duplicate_member',
+        raceExisting
+          ? {
+              memberId: raceExisting.memberId,
+              fullName: raceExisting.fullName,
+              status: raceExisting.status,
+            }
+          : { phone: member.phone },
+      )
+    }
+    throw err
+  }
   // A joining-date or plan change re-anchors the billing series from the last
   // issued period, so already-issued bills are never rewritten.
   await reconcileMemberBilling(member)

@@ -156,3 +156,21 @@ export function rupeesToPaise(value: string | number): number {
 export function paiseToRupeeInput(paise: number): string {
   return (paise / 100).toFixed(2)
 }
+
+/** Strips formatting, country code (91) and trunk prefix (0) from a phone number. */
+export function normalizePhone(input: string): string {
+  let digits = input.replace(/\D/g, '')
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  while (digits.length > 10 && digits.startsWith('91')) {
+    digits = digits.slice(2)
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = digits.slice(1)
+  }
+  return digits
+}
+
+/** Validates that a normalized phone number has exactly 10 digits. */
+export function isValidPhone(normalized: string): boolean {
+  return /^\d{10}$/.test(normalized)
+}

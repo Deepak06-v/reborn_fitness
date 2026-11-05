@@ -429,3 +429,13 @@ export interface WhatsAppCampaignsResponse {
   hasMore: boolean
 }
 
+
+export interface PhoneCheckResponse {
+  exists: boolean
+  normalizedPhone?: string
+  member?: {
+    memberId: string
+    fullName: string
+    status: 'active' | 'inactive'
+  }
+}

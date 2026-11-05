@@ -7,6 +7,7 @@ import type {
   MemberListResponse,
   Payment,
   PaymentDetailResponse,
+  PhoneCheckResponse,
   PaymentListResponse,
   Plan,
   WhatsAppCampaignsResponse,
@@ -180,6 +181,11 @@ export const adminApi = {
         method: 'PATCH',
         body,
       }).then((data) => data.member)
+    },
+    checkPhone(phone: string, excludeMemberId?: string): Promise<PhoneCheckResponse> {
+      return request<PhoneCheckResponse>('/members/check-phone', {
+        query: { phone, excludeMemberId },
+      })
     },
     setStatus(id: string, status: 'active' | 'inactive'): Promise<Member> {
       return request<{ member: Member }>(

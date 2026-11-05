@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { validate } from '../middleware/validate'
 import { requireOwner } from '../middleware/auth'
 import {
+  checkPhoneQuerySchema,
   createMemberSchema,
   listMembersQuerySchema,
   memberIdParamSchema,
@@ -9,6 +10,7 @@ import {
 } from '../validation/members'
 import { asyncHandler } from '../utils/errors'
 import {
+  checkPhoneAvailability,
   createMember,
   getMemberDetail,
   listMembers,
@@ -36,6 +38,16 @@ router.post(
     const adminId = (req.admin as NonNullable<typeof req.admin>)?._id?.toString()
     const member = await createMember(req.body, adminId)
     res.status(201).json({ member: serializeMember(member) })
+  }),
+)
+
+router.get(
+  '/check-phone',
+  validate({ query: checkPhoneQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { phone, excludeMemberId } = req.query as { phone: string; excludeMemberId?: string }
+    const result = await checkPhoneAvailability(phone, excludeMemberId)
+    res.json(result)
   }),
 )
 
